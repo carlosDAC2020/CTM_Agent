@@ -7,7 +7,7 @@ from agent.state import ProjectState
 from agent.nodes.ingestion import ingest_project_info
 from agent.nodes.research import research_opportunities
 from agent.nodes.analysis import academic_research, generate_report
-from agent.nodes.chat import chat_responder, select_opportunities, route_chat
+from agent.nodes.chat import chat_responder, select_opportunities, route_chat, process_selection
 
 builder = StateGraph(ProjectState)
 
@@ -15,6 +15,7 @@ builder = StateGraph(ProjectState)
 builder.add_node("ingest_info", ingest_project_info)
 builder.add_node("research_opportunities", research_opportunities)
 builder.add_node("select_opportunities", select_opportunities)
+builder.add_node("process_selection", process_selection) 
 builder.add_node("academic_research", academic_research)
 builder.add_node("generate_report", generate_report)
 builder.add_node("chat_responder", chat_responder)
@@ -23,10 +24,11 @@ builder.add_node("chat_responder", chat_responder)
 builder.set_entry_point("ingest_info")
 builder.add_edge("ingest_info", "research_opportunities")
 builder.add_edge("research_opportunities", "select_opportunities")
-builder.add_edge("select_opportunities", "academic_research")
+# Ahora, después de la interrupción, procesamos la selección
+builder.add_edge("select_opportunities", "process_selection") 
+# Y después de procesar, continuamos con la investigación académica
+builder.add_edge("process_selection", "academic_research") 
 builder.add_edge("academic_research", "generate_report")
-
-# El reporte nos lleva al modo chat
 builder.add_edge("generate_report", "chat_responder")
 
 # ---  LÓGICA DE BUCLE CONDICIONAL ---

@@ -1,6 +1,6 @@
 # src/agent/state.py
 
-from typing import List, TypedDict
+from typing import List, TypedDict, Any
 from langchain_core.messages import HumanMessage, AIMessage
 
 class ProjectState(TypedDict):
@@ -11,13 +11,16 @@ class ProjectState(TypedDict):
     # --- Información de Entrada ---
     project_title: str
     project_description: str
-    document_paths: List[str] # Lista de rutas a documentos locales
+    document_paths: List[str] 
 
     # --- Resultados de los Nodos (se irán llenando) ---
     investment_opportunities: List[dict]
     selected_opportunities: List[dict]
     academic_papers: List[dict]
     improvement_report: str
+
+    # --- Clave Temporal para Interrupción ---
+    user_selection: Any 
 
     # --- Historial de Conversación ---
     messages: list[HumanMessage | AIMessage]

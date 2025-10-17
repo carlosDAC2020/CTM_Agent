@@ -7,29 +7,24 @@ from ..state import ProjectState
 
 def select_opportunities(state: ProjectState) -> Dict[str, Any]:
     """
-    Nodo que presenta las oportunidades encontradas al usuario y espera su selección.
-    Usa interrupt() para pausar la ejecución y capturar la selección del usuario.
+    Nodo que presenta las oportunidades encontradas y PAUSA la ejecución.
+    La lógica de PROCESAMIENTO de la selección se mueve al siguiente nodo en el grafo.
     """
     print("\n" + "="*80)
-    print("NODO: SELECCIÓN DE OPORTUNIDADES")
+    print("NODO: PRESENTAR Y PAUSAR PARA SELECCIÓN DE OPORTUNIDADES")
     print("="*80)
     
     opportunities = state.get("investment_opportunities", [])
     
     if not opportunities:
         print("   -> No hay oportunidades para seleccionar. Saltando este paso.")
-        return {
-            "selected_opportunities": [],
-            "messages": [{
-                "role": "assistant",
-                "content": "No se encontraron oportunidades de inversión para seleccionar."
-            }]
-        }
+        # Devolvemos un valor especial para que el siguiente nodo sepa que no hay nada que procesar
+        return {"user_selection": "none"}
     
     print(f"\n   Se encontraron {len(opportunities)} oportunidades.")
-    print("   Esperando selección del usuario...\n")
+    print("   Pausando ejecución para esperar selección del usuario...\n")
     
-    # Preparar la información para mostrar al usuario
+    # Preparamos la información que se enviará al cliente
     opportunities_info = {
         "total_opportunities": len(opportunities),
         "opportunities": [
@@ -47,35 +42,51 @@ def select_opportunities(state: ProjectState) -> Dict[str, Any]:
                       "Envía una lista de índices (ej: [0, 1, 2]) o 'all' para seleccionar todas."
     }
     
-    # Pausar la ejecución y esperar la selección del usuario
-    user_selection = interrupt(opportunities_info)
-    
-    # Procesar la selección del usuario
+    # Pausamos la ejecución. El valor que el usuario envíe se almacenará en el estado.
+    # Cuando se reanude, el valor de 'interrupt()' será la selección del usuario.
+    # Lo guardamos en una nueva clave del estado, por ejemplo 'user_selection'.
+    return {"user_selection": interrupt(opportunities_info)}
+
+
+def process_selection(state: ProjectState) -> Dict[str, Any]:
+    """
+    Este nuevo nodo se ejecuta DESPUÉS de que el usuario haya hecho su selección.
+    Su única responsabilidad es procesar esa selección y actualizar el estado final.
+    """
+    print("\n" + "="*80)
+    print("NODO: PROCESANDO SELECCIÓN DEL USUARIO")
+    print("="*80)
+
+    user_selection = state.get("user_selection")
+    opportunities = state.get("investment_opportunities", [])
     selected_opportunities = []
-    
-    if isinstance(user_selection, str) and user_selection.lower() == "all":
+
+    if user_selection == "none":
+        print("   -> No se encontraron oportunidades, el análisis será omitido.")
+
+    elif isinstance(user_selection, str) and user_selection.lower() == "all":
         selected_opportunities = opportunities
         print(f"   ✅ Usuario seleccionó TODAS las oportunidades ({len(opportunities)})")
+
     elif isinstance(user_selection, list):
-        # Validar que los índices sean válidos
         valid_indices = [idx for idx in user_selection if isinstance(idx, int) and 0 <= idx < len(opportunities)]
         selected_opportunities = [opportunities[idx] for idx in valid_indices]
         print(f"   ✅ Usuario seleccionó {len(selected_opportunities)} oportunidades: {valid_indices}")
+        
     else:
-        print(f"   ⚠️ Selección inválida: {user_selection}. No se seleccionó ninguna oportunidad.")
-    
+        print(f"   ⚠️ Selección inválida recibida: {user_selection}. No se seleccionó ninguna oportunidad.")
+
     message_content = f"Has seleccionado {len(selected_opportunities)} oportunidades para análisis académico."
     if not selected_opportunities:
         message_content = "No se seleccionó ninguna oportunidad válida. El análisis académico será omitido."
-    
+
     print(f"\n{message_content}\n")
-    
+
+    # Actualizamos el estado con las oportunidades seleccionadas y borramos la selección temporal
     return {
         "selected_opportunities": selected_opportunities,
-        "messages": [{
-            "role": "assistant",
-            "content": message_content
-        }]
+        "user_selection": None, # Limpiamos la clave temporal
+        "messages": [{"role": "assistant", "content": message_content}]
     }
 
 

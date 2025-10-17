@@ -18,5 +18,5 @@ def get_llm():
     return ChatGoogleGenerativeAI(
         model="gemini-2.5-flash", # Puedes cambiarlo por gemini-1.5-pro si necesitas más potencia
         api_key=api_key,
-        temperature=0.6 # Una temperatura baja es buena para tareas que requieren predictibilidad
+        temperature=0.8 # Una temperatura baja es buena para tareas que requieren predictibilidad
     )

@@ -8,6 +8,8 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
+from typing import Literal 
+
 try:
     from langchain_community.tools import BraveSearch
     BRAVE_AVAILABLE = True
@@ -36,8 +38,10 @@ class QueryList(BaseModel):
 
 class ScrutinyResult(BaseModel):
     """Resultado del análisis de relevancia de una fuente."""
-    is_relevant: bool = Field(description="True si la fuente es una convocatoria o página de financiación directa.")
-
+    relevance_category: Literal["Direct Funding Opportunity", "Funding Source Portal", "Potential Funding Organization", "Not Relevant"] = Field(
+        description="Categorization of the search result's relevance."
+    )
+    justification: str = Field(description="A brief explanation for the chosen category.")
 
 class FundingOpportunity(BaseModel):
     """Modelo para una oportunidad de financiación."""
@@ -68,20 +72,20 @@ def generate_search_queries(project_details: str, llm) -> List[str]:
     print("\n[1/4] Generando queries de búsqueda...")
     
     system_prompt = """
-    Actúa como un experto en la búsqueda de financiación para proyectos de innovación y tecnología. 
-    Tu tarea es generar consultas de búsqueda (queries) estratégicas para encontrar oportunidades 
-    de financiación (grants, funding, convocatorias, etc.) basadas en la descripción del proyecto.
-    
-    Debes analizar el título, la descripción y las palabras clave del proyecto para crear 5 ideas 
-    de búsqueda diferentes y efectivas.
-    
-    Por cada idea, genera dos versiones de la query:
-    1. Una para búsquedas internacionales, en inglés.
-    2. Una para búsquedas a nivel nacional (Colombia), en español.
-    
-    Utiliza sinónimos y términos relacionados como "funding", "grants", "convocatorias", 
-    "financiación", "proyectos de investigación", "venture capital", etc.
-    
+    You are a strategic research analyst specializing in securing funding for technology and innovation projects.
+    Your task is to generate highly effective search queries to find funding opportunities (grants, venture capital, government calls for proposals) based on a project description.
+
+    Analyze the project's core technologies, target sector, and potential impact. Create 5 distinct search concepts.
+    For each concept, generate two query variations:
+    1.  **International (English):** Combine technical terms with financial keywords like "funding", "grants", "seed round", "R&D funding". Use boolean operators like OR and AND. Be specific.
+        Example for a drone project: `("precision agriculture" AND "drone technology") OR "agritech innovation fund"`
+    2.  **National (Colombia - Spanish):** Translate the concept into Spanish, using local terms like "convocatorias", "financiación", "capital semilla", "proyectos I+D+i". Target it specifically to Colombia.
+
+    RULES:
+    - Focus on finding direct funding opportunities, not just news articles.
+    - Be creative and combine different keywords in each query.
+    - Avoid overly broad terms.
+
     {format_instructions}
     """
     
@@ -200,31 +204,27 @@ def search_web(queries: List[str]) -> List[Dict]:
 # PASO 3: ESCRUTINIO (FILTRADO DE RELEVANCIA)
 # ============================================================================
 
+# src/agent/nodes/research.py (función scrutinize_results)
+
 def scrutinize_results(search_results: List[Dict], llm) -> List[Dict]:
     """
-    Filtra los resultados de búsqueda para quedarse solo con fuentes relevantes.
-    
-    Returns:
-        Lista de resultados relevantes
+    Filters and categorizes search results to identify relevant funding sources.
     """
     print(f"\n[3/4] Escrutando {len(search_results)} resultados...")
     
+    # --- PROMPT DE ESCRUTINIO REINVENTADO ---
     system_prompt = """
-    Eres un experto en identificar fuentes de financiación legítimas.
-    
-    Tu tarea es determinar si el contenido proporcionado corresponde a:
-    - Una convocatoria de financiación activa
-    - Una página oficial de grants o funding
-    - Un programa de inversión o subsidio
-    
-    NO son relevantes:
-    - Noticias sobre financiación
-    - Blogs o artículos de opinión
-    - Directorios o listados generales
-    - Artículos académicos
-    
-    Analiza el título y el contenido y responde si es relevante.
-    
+    You are an expert financial analyst. Your task is to categorize a web search result to determine its potential for finding project funding.
+    Think step-by-step. First, analyze the content. Then, assign one of the four categories below.
+
+    Here are the categories:
+    1.  **"Direct Funding Opportunity"**: This is the best category. The page is a specific, active call for proposals, a grant announcement, or a direct application page. It has a clear objective, eligibility criteria, and often a deadline.
+    2.  **"Funding Source Portal"**: The page is a list or portal of multiple funding opportunities. For example, a government page listing all their active grants, or a foundation's "open calls" section.
+    3.  **"Potential Funding Organization"**: The page is the homepage or a high-level page of an organization that is known to fund projects in this area (e.g., a government ministry of science, a venture capital firm, a corporate foundation). It doesn't list a specific call, but it's a very strong lead.
+    4.  **"Not Relevant"**: The page is a news article, a blog post, a scientific paper, a finished project, or a general information page that does not directly relate to obtaining funding.
+
+    Your goal is to find actionable leads. Err on the side of inclusion for categories 2 and 3.
+
     {format_instructions}
     """
     
@@ -232,7 +232,7 @@ def scrutinize_results(search_results: List[Dict], llm) -> List[Dict]:
     
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
-        ("user", "Título: {title}\n\nContenido: {content}\n\nURL: {url}"),
+        ("user", "Analyze the following web page content:\n\nTitle: {title}\nURL: {url}\n\nContent Snippet:\n{content}"),
     ])
     
     chain = prompt_template | llm | parser
@@ -241,20 +241,29 @@ def scrutinize_results(search_results: List[Dict], llm) -> List[Dict]:
     
     for result in search_results:
         try:
+            # Limitar el contenido para no exceder el contexto del LLM
+            content_snippet = result.get("content", "")
+            if len(content_snippet) > 1500:
+                content_snippet = content_snippet[:1500]
+
             scrutiny = chain.invoke({
                 "title": result.get("title", ""),
-                "content": result.get("content", "")[:500],  # Limitamos el contenido
+                "content": content_snippet,
                 "url": result.get("url", ""),
                 "format_instructions": parser.get_format_instructions()
             })
             
-            if scrutiny.get("is_relevant", False):
-                print(f"   ✅ Relevante: {result.get('title', '')[:60]}")
+            category = scrutiny.get("relevance_category")
+            
+            # --- LÓGICA DE FILTRADO MEJORADA ---
+            # Aceptamos las 3 primeras categorías
+            if category and category != "Not Relevant":
+                print(f"   ✅ Relevante ({category}): {result.get('title', '')[:60]}")
                 relevant_results.append(result)
             else:
                 print(f"   ❌ Descartado: {result.get('title', '')[:60]}")
             
-            time.sleep(4.1)  # Respetamos límite de API (15 RPM)
+            time.sleep(2) # Puedes ajustar el sleep si es necesario
             
         except Exception as e:
             print(f"   ⚠️ Error en escrutinio: {e}")
@@ -262,8 +271,6 @@ def scrutinize_results(search_results: List[Dict], llm) -> List[Dict]:
     
     print(f"   ✅ Resultados relevantes: {len(relevant_results)}/{len(search_results)}")
     return relevant_results
-
-
 # ============================================================================
 # PASO 4: EXTRACCIÓN DE OPORTUNIDADES
 # ============================================================================

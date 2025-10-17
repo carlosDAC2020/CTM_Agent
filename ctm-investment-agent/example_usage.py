@@ -13,9 +13,7 @@ def run_investment_research():
     initial_state: ProjectState = {
         "project_title": "AgroTech: Plataforma de Agricultura de Precisión con Drones e IoT",
         "project_description": """
-        Desarrollo de una plataforma integral de agricultura de precisión que combina 
-        drones, sensores IoT y análisis de datos con IA para optimizar la producción 
-        agrícola en zonas rurales de Colombia. El sistema incluye:
+        Desarrollo de una plataforma integral de agricultura de precisión que combina drones, sensores IoT y análisis de datos con IA para optimizar la producción agrícola en zonas rurales de Colombia. El sistema incluye:
         
         - Drones equipados con cámaras multiespectrales para monitoreo de cultivos
         - Red de sensores IoT para medir humedad del suelo, temperatura y nutrientes
