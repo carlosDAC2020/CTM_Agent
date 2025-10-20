@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cliente de Agente CTM</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            width: 100%;
+            max-width: 700px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px
+ 12px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            box-sizing: border-box;
+        }
+        h1 {
+            text-align: center;
+            color: #1a73e8;
+            margin-bottom: 25px;
+        }
+        section {
+            border-top: 1px solid #e0e0e0;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+        .hidden { display: none; }
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+            font-size: 1rem;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: #155ab6; }
+        button:disabled { background-color: #9e9e9e; cursor: not-allowed; }
+
+        /* Estilos de Carga y Progreso */
+        .loader-container { text-align: center; }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #1a73e8;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .progress-log-container {
+            text-align: left;
+            margin-top: 20px;
+            background-color: #2d2d2d;
+            color: #f1f1f1;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+            padding: 15px;
+            border-radius: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #444;
+        }
+        .progress-step { margin-bottom: 8px; }
+        .progress-step.success::before { content: '✅ '; color: #4caf50; }
+        .progress-step.info::before { content: '⏳ '; }
+        
+        /* Estilos de Selección de Oportunidades */
+        .opportunity-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 12px;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        .opportunity-item input { margin-right: 15px; margin-top: 5px; }
+        .opportunity-item label { flex: 1; cursor: pointer; }
+        .opportunity-item small { color: #555; display: block; margin-top: 4px; }
+
+        /* Estilos del Chat */
+        #chat-history {
+            height: 300px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 15px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-message {
+            padding: 8px 12px;
+            border-radius: 15px;
+            max-width: 80%;
+            margin-bottom: 10px;
+            word-wrap: break-word;
+        }
+        .user-message {
+            background-color: #1a73e8;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 3px;
+        }
+        .agent-message {
+            background-color: #e9e9eb;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Evaluación de Proyectos con Agente CTM</h1>
+
+    <!-- PASO 1: Formulario de Inicio -->
+    <section id="project-form-section">
+        <h2>1. Iniciar Nueva Evaluación</h2>
+        <form id="project-form">
+            <label for="project-title">Título del Proyecto</label>
+            <textarea id="project-title" name="project-title" required>Detección de deforestación mediante inteligencia artificial</textarea>
+            
+            <label for="project-description">Descripción del Proyecto</label>
+            <textarea id="project-description" name="project-description" required>Desarrollo de drones con la capacidad de transferir información a un centro de control e identificar patrones de deforestación mediante visión artificial.</textarea>
+            
+            <button type="submit">Iniciar Investigación</button>
+        </form>
+    </section>
+
+    <!-- Estado de Carga con Log de Progreso -->
+    <section id="loading-section" class="hidden">
+        <div class="loader-container">
+            <div class="loader"></div>
+            <p id="loading-text">Iniciando...</p>
+            <div id="progress-log" class="progress-log-container"></div>
+        </div>
+    </section>
+
+    <!-- PASO 2: Selección de Oportunidades -->
+    <section id="selection-section" class="hidden">
+        <h2>2. Seleccionar Oportunidades</h2>
+        <p>El agente ha encontrado las siguientes oportunidades. Selecciona cuáles deseas analizar en profundidad.</p>
+        <form id="selection-form">
+            <div id="opportunities-list"></div>
+            <button type="button" id="select-all-btn">Seleccionar/Deseleccionar Todas</button>
+            <button type="submit" style="margin-top: 10px;">Analizar Oportunidades Seleccionadas</button>
+        </form>
+    </section>
+
+    <!-- PASO 3: Chat Interactivo -->
+    <section id="chat-section" class="hidden">
+        <h2>3. Chat con el Agente</h2>
+        <p>El reporte está listo. Puedes hacer preguntas a continuación.</p>
+        <div id="chat-history"></div>
+        <form id="chat-form">
+            <input type="text" id="chat-input" placeholder="Escribe tu pregunta aquí... (o 'end' para terminar)" required autocomplete="off">
+            <button type="submit">Enviar</button>
+        </form>
+    </section>
+</div>
+
+<script>
+    const BASE_URL = "http://127.0.0.1:2024";
+    const ASSISTANT_ID = "agent";
+    let threadId = null;
+    let pollingInterval = null;
+
+    // Elementos del DOM
+    const projectForm = document.getElementById('project-form');
+    const selectionForm = document.getElementById('selection-form');
+    const chatForm = document.getElementById('chat-form');
+    const chatInput = document.getElementById('chat-input');
+    const chatHistory = document.getElementById('chat-history');
+    const opportunitiesList = document.getElementById('opportunities-list');
+    const loadingText = document.getElementById('loading-text');
+    const selectAllBtn = document.getElementById('select-all-btn');
+    const progressLog = document.getElementById('progress-log');
+
+    // --- FUNCIONES DE UI ---
+    function showSection(sectionId) {
+        document.querySelectorAll('.container section').forEach(section => section.classList.add('hidden'));
+        const sectionToShow = document.getElementById(sectionId);
+        if (sectionToShow) sectionToShow.classList.remove('hidden');
+    }
+
+    function addMessageToChat(sender, text) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('chat-message', sender === 'User' ? 'user-message' : 'agent-message');
+        messageDiv.textContent = text;
+        chatHistory.appendChild(messageDiv);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function renderOpportunities(opportunities) {
+        opportunitiesList.innerHTML = '';
+        opportunities.forEach(opp => {
+            const item = document.createElement('div');
+            item.classList.add('opportunity-item');
+            item.innerHTML = `
+                <input type="checkbox" id="opp-${opp.index}" value="${opp.index}">
+                <label for="opp-${opp.index}">
+                    <strong>${opp.origin}</strong>
+                    <p style="margin: 4px 0;">${opp.description}</p>
+                    <small>Tipo: ${opp.financing_type || 'No especificado'}</small>
+                </label>
+            `;
+            opportunitiesList.appendChild(item);
+        });
+    }
+
+    // ¡NUEVA FUNCIÓN PARA ACTUALIZAR LA UI DE PROGRESO!
+    function updateProgressUI(state) {
+        if (!state.values) return;
+        const values = state.values;
+        let changed = false;
+
+        const steps = [
+            { key: 'search_queries', message: (v) => `✅ Generadas ${v.length} queries de búsqueda.`, renderedKey: 'queriesRendered' },
+            { key: 'search_results', message: (v) => `✅ Búsqueda web completada. Encontrados ${v.length} resultados.`, renderedKey: 'resultsRendered' },
+            { key: 'relevant_results', message: (v) => `✅ Análisis de relevancia finalizado. ${v.length} son relevantes.`, renderedKey: 'scrutinyRendered' },
+            { key: 'investment_opportunities', message: (v) => `✅ Extracción finalizada. ${v.length} oportunidades estructuradas.`, renderedKey: 'extractionRendered' }
+        ];
+
+        steps.forEach(step => {
+            if (values[step.key] && values[step.key].length > 0 && !progressLog.dataset[step.renderedKey]) {
+                progressLog.innerHTML += `<div class="progress-step">${step.message(values[step.key])}</div>`;
+                progressLog.dataset[step.renderedKey] = 'true';
+                changed = true;
+            }
+        });
+        
+        if (changed) progressLog.scrollTop = progressLog.scrollHeight;
+    }
+
+    // --- LÓGICA PRINCIPAL DE POLLING ---
+    async function startBackgroundTask(payload) {
+        const response = await fetch(`${BASE_URL}/threads/${threadId}/runs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(`Error al iniciar la tarea: ${response.status}`);
+        console.log("Tarea iniciada/reanudada en segundo plano. Comenzando sondeo...");
+    }
+
+    function pollForState() {
+        if (pollingInterval) clearInterval(pollingInterval);
+
+        pollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`${BASE_URL}/threads/${threadId}/state`);
+                if (!response.ok) return;
+
+                const state = await response.json();
+                console.log("Sondeo de estado:", state);
+
+                updateProgressUI(state); // Actualizar UI de progreso en cada sondeo
+
+                const interrupt = state.interrupts?.[0] || state.tasks?.[0]?.interrupts?.[0];
+
+                if (interrupt) {
+                    console.log("¡Interrupción detectada por sondeo!");
+                    clearInterval(pollingInterval);
+                    processInterrupt(interrupt);
+                }
+            } catch (error) {
+                console.error("Error durante el sondeo:", error);
+                clearInterval(pollingInterval);
+            }
+        }, 2000); // Preguntar cada 2 segundos
+    }
+
+    function processInterrupt(interrupt) {
+        const interruptValue = interrupt.value;
+        showSection('hidden');
+
+        if (interruptValue.opportunities) {
+            renderOpportunities(interruptValue.opportunities);
+            showSection('selection-section');
+        } else if (interruptValue.status === 'ready') {
+            addMessageToChat('Agent', 'He finalizado el reporte de mejoras con la propuesta conceptual integrada. Ahora puedes hacer preguntas.');
+            showSection('chat-section');
+        }
+    }
+
+    // --- EVENT LISTENERS ---
+    projectForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        progressLog.innerHTML = '';
+        Object.keys(progressLog.dataset).forEach(key => delete progressLog.dataset[key]);
+
+        showSection('loading-section');
+        loadingText.textContent = 'Creando hilo y iniciando investigación...';
+        
+        try {
+            const response = await fetch(`${BASE_URL}/threads`, { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' }});
+            threadId = (await response.json()).thread_id;
+            
+            const payload = {
+                assistant_id: ASSISTANT_ID,
+                input: {
+                    project_title: document.getElementById('project-title').value,
+                    project_description: document.getElementById('project-description').value
+                }
+            };
+            await startBackgroundTask(payload);
+            pollForState();
+        } catch (error) {
+            alert("Error al iniciar. Revisa la consola y asegúrate de que ambos servidores estén activos.");
+            showSection('project-form-section');
+        }
+    });
+
+    selectionForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        showSection('loading-section');
+        loadingText.textContent = 'Agente generando reporte...';
+        progressLog.innerHTML = ''; // Limpiar log para la nueva fase
+
+        const selected = Array.from(document.querySelectorAll('#opportunities-list input:checked'))
+                              .map(input => parseInt(input.value));
+
+        if (selected.length === 0) {
+            alert("Por favor, selecciona al menos una oportunidad.");
+            showSection('selection-section');
+            return;
+        }
+
+        const payload = { assistant_id: ASSISTANT_ID, command: { resume: selected } };
+        await startBackgroundTask(payload);
+        pollForState();
+    });
+    
+    chatForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const question = chatInput.value.trim();
+        if (!question) return;
+
+        addMessageToChat('User', question);
+        chatInput.value = '';
+        
+        if (question.toLowerCase() === 'end') {
+            addMessageToChat('Agent', 'Conversación finalizada.');
+            chatInput.disabled = true;
+            document.querySelector('#chat-form button').disabled = true;
+            clearInterval(pollingInterval);
+            return;
+        }
+        
+        const payload = { assistant_id: ASSISTANT_ID, command: { resume: question } };
+        await startBackgroundTask(payload);
+        pollForState();
+    });
+
+    selectAllBtn.addEventListener('click', () => {
+        const checkboxes = document.querySelectorAll('#opportunities-list input[type="checkbox"]');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+    });
+
+    showSection('project-form-section');
+</script>
+</body>
+</html>
