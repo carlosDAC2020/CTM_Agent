@@ -13,6 +13,11 @@ class ProjectState(TypedDict):
     project_description: str
     document_paths: List[str] 
 
+    # --- Búsqueda de Información ---
+    search_queries: List[str]
+    search_results: List[dict]
+    relevant_results: List[dict]
+
     # --- Resultados de los Nodos (se irán llenando) ---
     investment_opportunities: List[dict]
     selected_opportunities: List[dict]

@@ -4,7 +4,7 @@ import os
 import time
 from typing import Dict, Any, List
 from datetime import datetime
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 from tavily import TavilyClient
@@ -359,102 +359,90 @@ def extract_opportunities(relevant_results: List[Dict], llm) -> List[Dict]:
     return all_opportunities
 
 
+
 # ============================================================================
-# NODO PRINCIPAL
+# NODOS MODULARES
 # ============================================================================
 
-def research_opportunities(state: ProjectState) -> Dict[str, Any]:
+# NODO 1: Genera las queries de búsqueda
+def generate_queries_node(state: ProjectState) -> Dict[str, Any]:
     """
-    Nodo de investigación de oportunidades.
-    Ejecuta el flujo completo de descubrimiento de oportunidades de inversión.
+    Nodo que genera las queries de búsqueda y las guarda en el estado.
     """
     print("\n" + "="*80)
-    print("NODO: INVESTIGACIÓN DE OPORTUNIDADES")
+    print("NODO: Generando Queries de Búsqueda")
     print("="*80)
     
-    # Obtenemos la información del proyecto
-    project_title = state.get("project_title", "")
-    project_description = state.get("project_description", "")
+    llm = get_llm()
+    project_details = f"Título: {state['project_title']}\nDescripción: {state['project_description']}"
     
-    project_details = f"""
-    Título del Proyecto: {project_title}
+    # Llama a tu función original, que ya hace el trabajo pesado
+    queries = generate_search_queries(project_details, llm)
     
-    Descripción del Proyecto:
-    {project_description}
+    # Devuelve un diccionario para actualizar el estado
+    return {"search_queries": queries}
+
+# NODO 2: Realiza la búsqueda web
+def search_web_node(state: ProjectState) -> Dict[str, Any]:
     """
+    Nodo que toma las queries del estado y realiza la búsqueda web.
+    """
+    print("\n" + "="*80)
+    print("NODO: Buscando en la Web")
+    print("="*80)
+
+    queries = state.get("search_queries", [])
+    if not queries:
+        return {"search_results": []}
     
-    print(f"\nProyecto: {project_title}")
+    # Llama a tu función original
+    results = search_web(queries)
     
-    try:
-        # Obtenemos el LLM configurado
-        llm = get_llm()
-        
-        # PASO 1: Generar queries de búsqueda
-        queries = generate_search_queries(project_details, llm)
-        
-        if not queries:
-            return {
-                "investment_opportunities": [],
-                "messages": [{
-                    "role": "assistant",
-                    "content": "No se pudieron generar queries de búsqueda."
-                }]
-            }
-        
-        # PASO 2: Buscar en la web
-        search_results = search_web(queries)
-        
-        if not search_results:
-            return {
-                "investment_opportunities": [],
-                "messages": [{
-                    "role": "assistant",
-                    "content": "No se encontraron resultados en la búsqueda web."
-                }]
-            }
-        
-        # PASO 3: Escrutinar resultados (filtrar relevantes)
-        relevant_results = scrutinize_results(search_results, llm)
-        
-        if not relevant_results:
-            return {
-                "investment_opportunities": [],
-                "messages": [{
-                    "role": "assistant",
-                    "content": f"Se analizaron {len(search_results)} resultados pero ninguno fue relevante."
-                }]
-            }
-        
-        # PASO 4: Extraer oportunidades
-        opportunities = extract_opportunities(relevant_results, llm)
-        
-        # Mensaje de confirmación
-        confirmation_message = {
-            "role": "assistant",
-            "content": f"✅ Investigación completada para '{project_title}'.\n"
-                       f"Se encontraron {len(opportunities)} oportunidades de inversión relevantes."
-        }
-        
-        print("\n" + "="*80)
-        print(f"INVESTIGACIÓN COMPLETADA: {len(opportunities)} oportunidades encontradas")
-        print("="*80 + "\n")
-        
-        return {
-            "investment_opportunities": opportunities,
-            "messages": [confirmation_message]
-        }
-        
-    except Exception as e:
-        print(f"\n❌ Error durante la investigación: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        error_message = {
-            "role": "assistant",
-            "content": f"Ocurrió un error durante la investigación: {str(e)}"
-        }
-        
-        return {
-            "investment_opportunities": [],
-            "messages": [error_message]
-        }
+    return {"search_results": results}
+
+# NODO 3: Filtra los resultados relevantes
+def scrutinize_results_node(state: ProjectState) -> Dict[str, Any]:
+    """
+    Nodo que filtra los resultados de búsqueda para encontrar los más relevantes.
+    """
+    print("\n" + "="*80)
+    print("NODO: Escrutando Resultados")
+    print("="*80)
+
+    llm = get_llm()
+    results = state.get("search_results", [])
+    if not results:
+        return {"relevant_results": []}
+    
+    # Llama a tu función original
+    relevant = scrutinize_results(results, llm)
+    
+    return {"relevant_results": relevant}
+
+# NODO 4: Extrae las oportunidades estructuradas
+def extract_opportunities_node(state: ProjectState) -> Dict[str, Any]:
+    """
+    Nodo final que extrae los datos estructurados y prepara el mensaje para el usuario.
+    """
+    print("\n" + "="*80)
+    print("NODO: Extrayendo Oportunidades")
+    print("="*80)
+
+    llm = get_llm()
+    relevant = state.get("relevant_results", [])
+    if not relevant:
+        return {"investment_opportunities": []}
+    
+    # Llama a tu función original
+    opportunities = extract_opportunities(relevant, llm)
+    
+    message = {
+        "role": "assistant",
+        "content": f"✅ Investigación completada. Se encontraron {len(opportunities)} oportunidades de inversión relevantes."
+    }
+    
+    # Devuelve el resultado final de la cadena de investigación
+    return {
+        "investment_opportunities": opportunities,
+        "messages": [message]
+    }

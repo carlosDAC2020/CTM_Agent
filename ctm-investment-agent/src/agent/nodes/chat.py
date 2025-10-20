@@ -3,7 +3,7 @@
 from typing import Dict, Any
 from langgraph.types import interrupt
 from ..state import ProjectState
-
+from langchain_core.messages import HumanMessage
 
 def select_opportunities(state: ProjectState) -> Dict[str, Any]:
     """
@@ -15,6 +15,8 @@ def select_opportunities(state: ProjectState) -> Dict[str, Any]:
     print("="*80)
     
     opportunities = state.get("investment_opportunities", [])
+
+    print(state)
     
     if not opportunities:
         print("   -> No hay oportunidades para seleccionar. Saltando este paso.")
@@ -221,10 +223,12 @@ def chat_responder(state: ProjectState) -> Dict[str, Any]:
         print("   ✅ Respuesta generada\n")
         
         return {
-            "messages": [{
-                "role": "assistant",
-                "content": answer
-            }]
+            "messages": [
+                # ¡Añadimos el mensaje del usuario al estado!
+                HumanMessage(content=question),
+                # Y luego añadimos la respuesta del asistente
+                {"role": "assistant", "content": answer}
+            ]
         }
         
     except Exception as e:
@@ -235,6 +239,7 @@ def chat_responder(state: ProjectState) -> Dict[str, Any]:
                 "content": f"Error al responder la pregunta: {str(e)}"
             }]
         }
+
 
 def route_chat(state: ProjectState) -> str:
     """

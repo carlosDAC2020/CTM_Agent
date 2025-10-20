@@ -248,13 +248,13 @@ def generate_report(state: ProjectState) -> Dict[str, Any]:
     # COMBINAR REPORTE Y PROPUESTA
     full_report = f"""{recommendations_content}
 
-{'='*80}
-{'='*80}
+                {'='*80}
+                {'='*80}
 
-PROPUESTA CONCEPTUAL DEL PROYECTO
+                PROPUESTA CONCEPTUAL DEL PROYECTO
 
-{proposal_content}
-"""
+                {proposal_content}
+            """
     
     print(f"\n{'='*80}")
     print("REPORTE COMPLETO GENERADO")
