@@ -1,9 +1,30 @@
-# src/agent/nodes/chat.py
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from langgraph.types import interrupt
-from ..state import ProjectState
 from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate 
+
+from ..state import ProjectState
+from ..config import get_llm
+
+
+# --- MODELO DE DATOS PARA LA DECISIÓN DEL CHAT ---
+class ChatDecision(BaseModel):
+    """
+    Clasifica la intención del usuario y extrae la información necesaria.
+    """
+    response: str = Field(description="La respuesta conversacional directa a la pregunta del usuario.")
+    action: str = Field(
+        description="La acción a seguir. Debe ser una de: 'continue' (para seguir chateando), 'rerun_research' (para investigar de nuevo), 'specific_report' (para generar un reporte de una oportunidad), o 'end' (para finalizar)."
+    )
+    target_index: int = Field(
+        default=None, 
+        description="Si la acción es 'specific_report', este es el índice numérico de la oportunidad mencionada por el usuario."
+    )
+
+
 
 def select_opportunities(state: ProjectState) -> Dict[str, Any]:
     """
@@ -94,203 +115,105 @@ def process_selection(state: ProjectState) -> Dict[str, Any]:
 
 def chat_responder(state: ProjectState) -> Dict[str, Any]:
     """
-    Nodo interactivo que responde preguntas sobre el proyecto, oportunidades y reporte.
-    Lee el último mensaje del usuario desde el estado.
+    Nodo interactivo que responde preguntas y determina la siguiente acción del grafo.
     """
-    from ..config import get_llm
-    from langchain_core.prompts import ChatPromptTemplate
-    
     print("\n" + "="*80)
-    print("NODO: CHAT INTERACTIVO")
+    print("NODO: CHAT INTERACTIVO (Centro de Comando)")
     print("="*80)
     
-    # Verificar si hay un reporte generado
-    improvement_report = state.get("improvement_report", "")
-    
-    if not improvement_report or improvement_report == "No se pudo generar el reporte ya que no se encontró investigación académica.":
-        print("   -> No hay reporte disponible. Finalizando.")
-        return {}
-    
-    print("\n   ✅ Reporte completo disponible (con propuesta conceptual)")
-    print("   ✅ Sistema de preguntas y respuestas activado")
-    
-    # Preparar información para el usuario
-    chat_info = {
-        "status": "ready",
-        "message": "El reporte de mejoras y la propuesta conceptual están listos. Puedes hacer preguntas sobre:",
-        "topics": [
-            "El proyecto y sus componentes",
-            "Las oportunidades de financiación identificadas",
-            "Las recomendaciones del reporte",
-            "La propuesta conceptual",
-            "Cómo implementar las mejoras sugeridas",
-            "Alineación con oportunidades de financiación"
-        ],
-        "instruction": "Envía tu pregunta como texto. Envía 'end' para finalizar."
-    }
-    
-    print("\n   Puedes hacer preguntas sobre:")
-    for topic in chat_info["topics"]:
-        print(f"      • {topic}")
-    
-    print("\n   Esperando pregunta del usuario...")
-    
     # Pausar y esperar pregunta del usuario
-    user_input = interrupt(chat_info)
+    user_input = interrupt({ "status": "ready", "instruction": "Envía tu pregunta o comando." })
     
-    # Convertir input a string
-    if isinstance(user_input, dict):
-        question = user_input.get("question", user_input.get("text", str(user_input)))
-    else:
-        question = str(user_input)
+    # Asumimos que la entrada es un string simple
+    question = str(user_input)
+    print(f"\n   ➡️ Procesando entrada: {question[:80]}...")
     
-    print(f"\n   ➡️ Procesando pregunta: {question[:60]}...")
-    
-    # Verificar si el usuario quiere finalizar
-    if question.lower().strip() in ["end", "fin", "finalizar", "salir", "exit"]:
-        print("   ✅ Finalizando sesión interactiva")
-        return {
-            "messages": [{
-                "role": "assistant",
-                "content": "Sesión finalizada. Gracias por usar el agente CTM."
-            }]
-        }
-    
-    # Responder la pregunta
+    # --- LÓGICA DE CLASIFICACIÓN DE INTENCIÓN ---
     llm = get_llm()
+    parser = JsonOutputParser(pydantic_object=ChatDecision)
+
+    # Formatear la lista de oportunidades para el prompt
+    opportunities_summary = "\n".join([
+        f"Índice {idx}: {opp.get('origin', 'N/A')} - {opp.get('description', 'N/A')[:100]}..."
+        for idx, opp in enumerate(state.get("investment_opportunities", []))
+    ])
+
+    system_prompt = f"""
+    Eres un asistente experto que actúa como un centro de comando. Tu tarea es doble:
+    1. Responder a la pregunta del usuario de forma conversacional.
+    2. Clasificar la intención del usuario en una de las siguientes acciones:
+       - 'continue': Si es una pregunta general o una conversación normal.
+       - 'rerun_research': Si el usuario pide explícitamente "investiga de nuevo", "busca más oportunidades", "encuentra otras opciones", etc.
+       - 'specific_report': Si el usuario pide generar un reporte detallado, analizar o profundizar en UNA oportunidad específica. Debes identificar el ÍNDICE de esa oportunidad.
+       - 'end': Si el usuario quiere terminar la conversación ("adiós", "fin", "terminar").
+
+    Aquí están las oportunidades disponibles con sus índices:
+    {opportunities_summary}
+
+    Analiza la pregunta del usuario y devuelve SIEMPRE un objeto JSON con el formato especificado.
     
-    project_title = state.get("project_title", "Proyecto")
-    project_description = state.get("project_description", "")
-    investment_opportunities = state.get("investment_opportunities", [])
-    academic_papers = state.get("academic_papers", [])
+     Ejemplo 1:
+    Usuario: "Explícame la recomendación 2."
+    Tu salida JSON: {{{{ "response": "Claro, la recomendación 2 se enfoca en...", "action": "continue", "target_index": null }}}}
+
+    Ejemplo 2:
+    Usuario: "Busca otras alternativas, por favor."
+    Tu salida JSON: {{{{ "response": "Entendido, iniciando una nueva búsqueda para encontrar alternativas.", "action": "rerun_research", "target_index": null }}}}
     
-    # Preparar contexto de oportunidades
-    opportunities_context = "\n".join([
-        f"- {opp.get('origin', 'N/A')}: {opp.get('description', 'N/A')} (Tipo: {opp.get('financing_type', 'N/A')}, Deadline: {opp.get('application_deadline', 'N/A')})"
-        for opp in investment_opportunities[:10]
-    ]) if investment_opportunities else "No se encontraron oportunidades."
+    Ejemplo 3:
+    Usuario: "Haz un reporte detallado de la oportunidad con índice 1."
+    Tu salida JSON: {{{{ "response": "Perfecto, comenzaré a generar el reporte para la oportunidad 1.", "action": "specific_report", "target_index": 1 }}}}
+
+    {{format_instructions}}
+    """
     
-    # Preparar contexto de papers
-    papers_context = "\n".join([
-        f"- [{paper.get('source', 'N/A')}] {paper.get('title', 'N/A')}"
-        for paper in academic_papers[:5]
-    ]) if academic_papers else "No hay papers disponibles."
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "{question}")
+    ])
     
-    prompt = ChatPromptTemplate.from_template(
-        """Eres un asistente experto en innovación y financiación de proyectos tecnológicos.
-        Ayudas a entender el proyecto, las oportunidades de financiación y las recomendaciones de mejora.
-        
-        PROYECTO:
-        Título: {project_title}
-        Descripción: {project_description}
-        
-        OPORTUNIDADES DE FINANCIACIÓN ENCONTRADAS:
-        {opportunities_context}
-        
-        REPORTE COMPLETO (Recomendaciones + Propuesta Conceptual):
-        {improvement_report}
-        
-        PAPERS ACADÉMICOS CONSULTADOS:
-        {papers_context}
-        
-        PREGUNTA DEL USUARIO:
-        {question}
-        
-        INSTRUCCIONES:
-        - Proporciona una respuesta clara, concisa y accionable
-        - Usa el contexto disponible para fundamentar tu respuesta
-        - Si la pregunta es sobre oportunidades, menciona las más relevantes
-        - Si es sobre implementación, refiérenciate en las recomendaciones del reporte
-        - Si la información no está disponible, indícalo claramente
-        
-        RESPUESTA:
-        """
-    )
-    
-    chain = prompt | llm
-    
+    chain = prompt | llm | parser
+
     try:
-        response = chain.invoke({
-            "project_title": project_title,
-            "project_description": project_description,
-            "opportunities_context": opportunities_context,
-            "improvement_report": improvement_report,
-            "papers_context": papers_context,
-            "question": question
+        decision = chain.invoke({
+            "question": question,
+            "format_instructions": parser.get_format_instructions()
         })
         
-        answer = response.content
-        print("   ✅ Respuesta generada\n")
+        print(f"   ✅ Decisión del LLM: Acción='{decision.get('action')}', Índice='{decision.get('target_index')}'")
         
         return {
             "messages": [
-                # ¡Añadimos el mensaje del usuario al estado!
                 HumanMessage(content=question),
-                # Y luego añadimos la respuesta del asistente
-                {"role": "assistant", "content": answer}
-            ]
+                {"role": "assistant", "content": decision.get("response")}
+            ],
+            "next_action": decision.get("action"),
+            "action_input": decision.get("target_index")
         }
-        
+
     except Exception as e:
-        print(f"   ⚠️ Error respondiendo pregunta: {e}")
+        print(f"   ⚠️ Error en la decisión del chat: {e}")
         return {
-            "messages": [{
-                "role": "assistant",
-                "content": f"Error al responder la pregunta: {str(e)}"
-            }]
+            "messages": [
+                HumanMessage(content=question),
+                {"role": "assistant", "content": f"Hubo un error al procesar tu solicitud: {e}"}
+            ],
+            "next_action": "continue" # Por seguridad, volvemos a chatear
         }
 
-
+# --- NUEVO ROUTER INTELIGENTE ---
 def route_chat(state: ProjectState) -> str:
     """
-    Decide si continuar en el bucle de chat o finalizar la conversación.
-    Solo procesa mensajes del usuario, no del asistente.
+    Lee el campo 'next_action' del estado para decidir a dónde ir.
     """
-    messages = state.get("messages", [])
+    action = state.get("next_action")
+    print(f"\n--- ROUTER: Decidiendo la ruta basada en la acción '{action}' ---")
     
-    if not messages:
-        print("--- ROUTER: No hay mensajes, finalizando ---")
+    if action == "rerun_research":
+        return "rerun_research"
+    elif action == "specific_report":
+        return "specific_report"
+    elif action == "end":
         return "end"
-    
-    # Buscar el último mensaje del USUARIO (no del asistente)
-    last_user_message = None
-    for msg in reversed(messages):
-        # Verificar si es un mensaje del usuario
-        is_user = False
-        if isinstance(msg, dict):
-            is_user = msg.get("role") == "user" or msg.get("type") == "human"
-        elif hasattr(msg, "type"):
-            is_user = msg.type == "human"
-        
-        if is_user:
-            last_user_message = msg
-            break
-    
-    if not last_user_message:
-        print("--- ROUTER: No hay mensajes del usuario, finalizando ---")
-        return "end"
-    
-    # Extraer el contenido del mensaje del usuario
-    content = ""
-    if isinstance(last_user_message, dict):
-        content = last_user_message.get("content", "")
-    elif hasattr(last_user_message, "content"):
-        content = last_user_message.content
-    
-    # Extraer el texto
-    question = ""
-    if isinstance(content, list) and len(content) > 0 and isinstance(content[0], dict):
-        question = content[0].get("text", "")
-    elif isinstance(content, str):
-        question = content
-    else:
-        question = str(content)
-        
-    print(f"--- ROUTER: Verificando entrada del usuario '{question[:100]}' ---")
-    
-    if question.lower().strip() in ["end", "fin", "finalizar", "salir", "exit"]:
-        print("   -> Decisión: Finalizar")
-        return "end"
-    else:
-        print("   -> Decisión: Continuar chat")
+    else: # Por defecto o si es 'continue'
         return "continue"

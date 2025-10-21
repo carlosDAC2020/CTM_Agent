@@ -23,9 +23,15 @@ class ProjectState(TypedDict):
     selected_opportunities: List[dict]
     academic_papers: List[dict]
     improvement_report: str
+    report_paths: List[str]
 
     # --- Clave Temporal para Interrupción ---
     user_selection: Any 
 
     # --- Historial de Conversación ---
     messages: list[HumanMessage | AIMessage]
+
+    # ---- Routing de acciones ---------------
+    next_action: str  # 'continue', 'rerun_research', 'specific_report', 'end'
+    action_input: Any # Para datos extra, como el índice de la oportunidad
+    report_type: str # tipo de generacion de reporte 'general' o 'specific'

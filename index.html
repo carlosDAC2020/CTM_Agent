@@ -303,15 +303,18 @@
         }, 2000); // Preguntar cada 2 segundos
     }
 
+    // Reemplaza la función processInterrupt con esta versión más simple
     function processInterrupt(interrupt) {
         const interruptValue = interrupt.value;
-        showSection('hidden');
+        showSection('hidden'); // Oculta la pantalla de "cargando"
 
         if (interruptValue.opportunities) {
             renderOpportunities(interruptValue.opportunities);
             showSection('selection-section');
         } else if (interruptValue.status === 'ready') {
-            addMessageToChat('Agent', 'He finalizado el reporte de mejoras con la propuesta conceptual integrada. Ahora puedes hacer preguntas.');
+            // ¡ERROR CORREGIDO! Ya no añadimos un mensaje aquí.
+            // Simplemente mostramos la sección de chat.
+            // La función de sondeo se encargará de mostrar el mensaje correcto.
             showSection('chat-section');
         }
     }

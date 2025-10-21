@@ -203,9 +203,6 @@ def search_web(queries: List[str]) -> List[Dict]:
 # ============================================================================
 # PASO 3: ESCRUTINIO (FILTRADO DE RELEVANCIA)
 # ============================================================================
-
-# src/agent/nodes/research.py (función scrutinize_results)
-
 def scrutinize_results(search_results: List[Dict], llm) -> List[Dict]:
     """
     Filters and categorizes search results to identify relevant funding sources.
@@ -263,7 +260,7 @@ def scrutinize_results(search_results: List[Dict], llm) -> List[Dict]:
             else:
                 print(f"   ❌ Descartado: {result.get('title', '')[:60]}")
             
-            time.sleep(2) # Puedes ajustar el sleep si es necesario
+            time.sleep(10) 
             
         except Exception as e:
             print(f"   ⚠️ Error en escrutinio: {e}")
@@ -271,6 +268,8 @@ def scrutinize_results(search_results: List[Dict], llm) -> List[Dict]:
     
     print(f"   ✅ Resultados relevantes: {len(relevant_results)}/{len(search_results)}")
     return relevant_results
+
+
 # ============================================================================
 # PASO 4: EXTRACCIÓN DE OPORTUNIDADES
 # ============================================================================
@@ -375,6 +374,29 @@ def generate_queries_node(state: ProjectState) -> Dict[str, Any]:
     
     llm = get_llm()
     project_details = f"Título: {state['project_title']}\nDescripción: {state['project_description']}"
+
+    existing_opportunities = state.get("investment_opportunities", [])
+    if existing_opportunities:
+        print("   -> Detectadas oportunidades existentes. Buscando alternativas.")
+        
+        # Formateamos las oportunidades existentes para el prompt
+        opportunities_summary = "\n".join([
+            f"- {opp.get('origin', 'N/A')}: {opp.get('description', 'N/A')[:100]}..."
+            for opp in existing_opportunities
+        ])
+        
+        # Añadimos un contexto adicional al prompt para guiar al LLM
+        project_details += f"""
+        
+        CONTEXTO ADICIONAL IMPORTANTE:
+        Ya hemos encontrado las siguientes oportunidades. Por favor, genera queries para encontrar
+        OPCIONES DIFERENTES Y ALTERNATIVAS a estas. No busques las mismas otra vez.
+        
+        Oportunidades ya encontradas:
+        {opportunities_summary}
+        """
+    else:
+        print("   -> No hay oportunidades previas. Iniciando búsqueda desde cero.")
     
     # Llama a tu función original, que ya hace el trabajo pesado
     queries = generate_search_queries(project_details, llm)
@@ -422,27 +444,46 @@ def scrutinize_results_node(state: ProjectState) -> Dict[str, Any]:
 # NODO 4: Extrae las oportunidades estructuradas
 def extract_opportunities_node(state: ProjectState) -> Dict[str, Any]:
     """
-    Nodo final que extrae los datos estructurados y prepara el mensaje para el usuario.
+    Nodo final que extrae los datos y los AÑADE a la lista existente de oportunidades.
     """
     print("\n" + "="*80)
-    print("NODO: Extrayendo Oportunidades")
+    print("NODO: Extrayendo y Acumulando Oportunidades")
     print("="*80)
 
     llm = get_llm()
     relevant = state.get("relevant_results", [])
     if not relevant:
-        return {"investment_opportunities": []}
+        # Si no hay nuevos resultados relevantes, no hacemos nada y mantenemos las oportunidades existentes
+        print("   -> No se encontraron nuevos resultados relevantes. No se añaden oportunidades.")
+        return {}
+
+    # Llama a tu función original para extraer las NUEVAS oportunidades
+    new_opportunities = extract_opportunities(relevant, llm)
     
-    # Llama a tu función original
-    opportunities = extract_opportunities(relevant, llm)
+    existing_opportunities = state.get("investment_opportunities", [])
+    
+
+    # Creamos un conjunto (set) de descripciones existentes para una búsqueda rápida
+    existing_descs = {opp['description'].lower() for opp in existing_opportunities}
+    
+    # Filtramos las nuevas oportunidades para quedarnos solo con las que no existen ya
+    unique_new_opportunities = [
+        opp for opp in new_opportunities if opp['description'].lower() not in existing_descs
+    ]
+    
+    
+    print(f"   -> Se extrajeron {len(new_opportunities)} nuevas oportunidades.")
+    print(f"   -> Se añadirán {len(unique_new_opportunities)} oportunidades únicas al estado.")
+
+    # Combinamos la lista existente con las nuevas oportunidades únicas
+    updated_opportunities = existing_opportunities + unique_new_opportunities
     
     message = {
         "role": "assistant",
-        "content": f"✅ Investigación completada. Se encontraron {len(opportunities)} oportunidades de inversión relevantes."
+        "content": f"✅ Nueva investigación completada. Se añadieron {len(unique_new_opportunities)} oportunidades nuevas. Ahora tienes un total de {len(updated_opportunities)}."
     }
     
-    # Devuelve el resultado final de la cadena de investigación
     return {
-        "investment_opportunities": opportunities,
+        "investment_opportunities": updated_opportunities,
         "messages": [message]
     }
