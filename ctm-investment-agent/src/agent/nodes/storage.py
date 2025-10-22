@@ -1,4 +1,3 @@
-# src/agent/nodes/storage.py
 import os
 from datetime import datetime
 from typing import Dict, Any
@@ -113,46 +112,95 @@ def get_styles():
     return styles
 
 # ============================================================================
-# PARSER DE MARKDOWN - LIMPIO Y SIN DUPLICADOS
+# PARSER DE MARKDOWN MEJORADO - RESPETA ESTRUCTURA COMPLETA
 # ============================================================================
 def parse_markdown_to_flowables(text: str, styles: dict):
-    """Convierte Markdown a Flowables de ReportLab."""
+    """
+    Convierte Markdown a Flowables de ReportLab.
+    Versión mejorada que respeta la estructura completa del reporte.
+    """
     flowables = []
     lines = text.split('\n')
     
     in_list = False
-    content_started = False
+    skip_next_lines = 0  # Contador para saltar líneas procesadas
     
     for idx, line in enumerate(lines):
+        # Si debemos saltar esta línea (ya fue procesada)
+        if skip_next_lines > 0:
+            skip_next_lines -= 1
+            continue
+            
         line_stripped = line.strip()
         
+        # Líneas vacías
         if not line_stripped:
             if in_list:
                 flowables.append(Spacer(1, 0.1*cm))
             continue
 
-        # IGNORAR las primeras líneas que contienen metadatos redundantes
-        if not content_started:
-            # Saltar líneas que contengan información de portada
-            if any(keyword in line_stripped for keyword in [
-                'ANÁLISIS DE OPORTUNIDAD ESPECÍFICA',
-                'PROPUESTA CONCEPTUAL',
-                'Proyecto:',
-                'Oportunidad Analizada:',
-                'Fecha de Generación:'
-            ]):
-                continue
-            
-            # Si encontramos un encabezado real (##), empezamos el contenido
-            if line_stripped.startswith('##') or line_stripped.startswith('# '):
-                content_started = True
-                # Continuar procesando esta línea
-
-        # Convertir markdown a HTML
+        # Convertir markdown a HTML (bold, italic)
         line_stripped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', line_stripped)
         line_stripped = re.sub(r'(?<!\*)\*(?!\*)([^\*]+)\*(?!\*)', r'<i>\1</i>', line_stripped)
 
-        # Procesar encabezados
+        # ============================================================
+        # DETECCIÓN ESPECIAL: Bloque de metadatos del encabezado
+        # ============================================================
+        if line_stripped.startswith('**Proyecto:**') or line_stripped.startswith('**Oportunidad Analizada:**') or line_stripped.startswith('**Fecha de Generación:**'):
+            # Procesamos el bloque completo de metadatos
+            metadata_lines = []
+            current_idx = idx
+            
+            while current_idx < len(lines):
+                meta_line = lines[current_idx].strip()
+                if not meta_line:
+                    break
+                if meta_line.startswith('**') and ':**' in meta_line:
+                    metadata_lines.append(meta_line)
+                    current_idx += 1
+                else:
+                    break
+            
+            # Crear tabla de metadatos
+            if metadata_lines:
+                skip_next_lines = len(metadata_lines) - 1
+                
+                # Parsear metadatos
+                metadata_data = []
+                for meta in metadata_lines:
+                    # Extraer clave y valor
+                    match = re.match(r'\*\*(.*?):\*\*\s*(.*)', meta)
+                    if match:
+                        key, value = match.groups()
+                        metadata_data.append([
+                            Paragraph(f"<b>{key}:</b>", styles['CotecmarMetadata']),
+                            Paragraph(value, styles['CotecmarMetadata'])
+                        ])
+                
+                if metadata_data:
+                    metadata_table = Table(metadata_data, colWidths=[4*cm, 13*cm])
+                    metadata_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (0, -1), COTECMAR_LIGHT_GRAY),
+                        ('TEXTCOLOR', (0, 0), (0, -1), COTECMAR_DARK_BLUE),
+                        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 9),
+                        ('TOPPADDING', (0, 0), (-1, -1), 6),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.5, COTECMAR_BLUE),
+                    ]))
+                    flowables.append(Spacer(1, 0.3*cm))
+                    flowables.append(metadata_table)
+                    flowables.append(Spacer(1, 0.5*cm))
+                
+                continue
+
+        # ============================================================
+        # ENCABEZADOS
+        # ============================================================
         if line_stripped.startswith('# '):
             if in_list:
                 flowables.append(Spacer(1, 0.3*cm))
@@ -176,7 +224,10 @@ def parse_markdown_to_flowables(text: str, styles: dict):
             flowables.append(Spacer(1, 0.15*cm))
             flowables.append(Paragraph(line_stripped[4:], styles['CotecmarH3']))
             flowables.append(Spacer(1, 0.1*cm))
-            
+        
+        # ============================================================
+        # LÍNEAS HORIZONTALES
+        # ============================================================
         elif line_stripped.startswith('---'):
             if in_list:
                 in_list = False
@@ -189,26 +240,31 @@ def parse_markdown_to_flowables(text: str, styles: dict):
             ]))
             flowables.append(line_table)
             flowables.append(Spacer(1, 0.4*cm))
-            
-        elif line_stripped.startswith('* ') or line_stripped.startswith('- '):
+        
+        # ============================================================
+        # LISTAS CON VIÑETAS
+        # ============================================================
+        elif line_stripped.startswith('- ') or line_stripped.startswith('* '):
             bullet_text = line_stripped[2:]
             flowables.append(Paragraph(
                 f'<font color="{COTECMAR_BLUE}">●</font> {bullet_text}', 
                 styles['CotecmarBullet']
             ))
             in_list = True
-            
+        
+        # ============================================================
+        # TEXTO NORMAL
+        # ============================================================
         else:
-            if content_started:  # Solo agregar texto si ya empezó el contenido real
-                if in_list:
-                    flowables.append(Spacer(1, 0.15*cm))
-                    in_list = False
-                flowables.append(Paragraph(line_stripped, styles['CotecmarBody']))
+            if in_list:
+                flowables.append(Spacer(1, 0.15*cm))
+                in_list = False
+            flowables.append(Paragraph(line_stripped, styles['CotecmarBody']))
     
     return flowables
 
 # ============================================================================
-# PLANTILLA SIMPLIFICADA - LOGO PEQUEÑO SIN SOBREPOSICIÓN
+# PLANTILLA DE PÁGINA
 # ============================================================================
 def page_template(canvas, doc):
     """Dibuja solo el logo discreto y el footer, sin sobreponerse al contenido."""
@@ -219,11 +275,10 @@ def page_template(canvas, doc):
     
     if logo_path.is_file():
         try:
-            # Logo pequeño en la esquina, por encima del área de contenido
             canvas.drawImage(
                 str(logo_path), 
-                doc.width + doc.leftMargin - 2*cm,  # Posición desde la derecha
-                doc.height + doc.bottomMargin + 0.5*cm,  # Por encima del contenido
+                doc.width + doc.leftMargin - 2*cm,
+                doc.height + doc.bottomMargin + 0.5*cm,
                 width=2*cm, 
                 height=0.7*cm,
                 preserveAspectRatio=True, 
@@ -233,7 +288,6 @@ def page_template(canvas, doc):
             print(f"   ⚠️ No se pudo cargar el logo: {e}")
 
     # --- FOOTER SIMPLE ---
-    # Línea decorativa
     canvas.setStrokeColor(COTECMAR_BLUE)
     canvas.setLineWidth(1)
     canvas.line(
@@ -243,7 +297,6 @@ def page_template(canvas, doc):
         doc.bottomMargin - 0.5*cm
     )
     
-    # Información del footer
     canvas.setFont('Helvetica', 7)
     canvas.setFillColor(COTECMAR_GRAY)
     canvas.drawString(
@@ -259,7 +312,6 @@ def page_template(canvas, doc):
         f"Documento generado el {datetime.now().strftime('%d/%m/%Y a las %H:%M')}"
     )
     
-    # Número de página
     canvas.setFont('Helvetica-Bold', 9)
     canvas.setFillColor(COTECMAR_BLUE)
     canvas.drawRightString(
@@ -271,10 +323,13 @@ def page_template(canvas, doc):
     canvas.restoreState()
 
 # ============================================================================
-# FUNCIÓN PRINCIPAL - SIN PÁGINA DE PRESENTACIÓN
+# FUNCIÓN PRINCIPAL
 # ============================================================================
 def save_report_as_pdf(state: ProjectState) -> Dict[str, Any]:
-    """Guarda el reporte como PDF profesional SIN página de presentación."""
+    """
+    Guarda el reporte como PDF profesional.
+    Versión mejorada que respeta completamente la estructura generada por la IA.
+    """
     print("\n" + "="*80)
     print("NODO: Guardando Reporte como PDF")
     print("="*80)
@@ -292,7 +347,12 @@ def save_report_as_pdf(state: ProjectState) -> Dict[str, Any]:
         print(f"   📁 Directorio creado: {subfolder}")
     
     # Nombre del archivo
-    file_prefix = "Reporte_General" if report_type == "general" else f"Analisis_Oportunidad_{state.get('action_input', 'idx')}"
+    if report_type == "general":
+        file_prefix = "Marco_Teorico_Estado_Arte"
+    else:
+        opp_id = state.get('action_input', 'idx')
+        file_prefix = f"Analisis_Oportunidad_{opp_id}"
+    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     thread_id_short = state.get("thread_id", "unknown")[:8]
     file_name = f"{file_prefix}_{thread_id_short}_{timestamp}.pdf"
@@ -303,7 +363,7 @@ def save_report_as_pdf(state: ProjectState) -> Dict[str, Any]:
         doc = SimpleDocTemplate(
             file_path,
             pagesize=letter,
-            topMargin=2.5*cm,  # Margen superior reducido
+            topMargin=2.5*cm,
             bottomMargin=2.5*cm,
             leftMargin=2*cm,
             rightMargin=2*cm
@@ -319,11 +379,10 @@ def save_report_as_pdf(state: ProjectState) -> Dict[str, Any]:
         print("   🎨 Generando estilos...")
         styles = get_styles()
         
-        # Crear historia - SOLO CONTENIDO, SIN PORTADA
+        # Crear historia - CONTENIDO COMPLETO SIN FILTROS
         story = []
         
-        # Contenido directo (sin portada)
-        print("   📝 Parseando contenido...")
+        print("   📝 Parseando contenido completo del reporte...")
         story.extend(parse_markdown_to_flowables(report_content, styles))
 
         # Construir PDF

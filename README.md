@@ -1,3 +1,11 @@
+esquema de reporte 
+
+marco teorico 
+estado del arte 
+referneicas bibliograficas 
+
+
+
 # 🚀 CTM Investment Agent - Proyecto Completo
 
 Sistema completo de análisis inteligente de oportunidades de inversión con agente LangGraph e interfaz web.

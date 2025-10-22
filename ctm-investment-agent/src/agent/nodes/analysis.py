@@ -164,11 +164,11 @@ def academic_research(state: ProjectState) -> Dict[str, Any]:
 # --- NODO 2: GENERACIÓN DE REPORTE ---
 def generate_report(state: ProjectState) -> Dict[str, Any]:
     """
-    Genera un reporte de mejoras y una propuesta conceptual con prompts
-    altamente detallados para una salida de calidad profesional.
+    Genera un reporte académico que establece el marco teórico y el estado del arte
+    del proyecto, basándose en la investigación académica proporcionada.
     """
     print("\n" + "="*80)
-    print("NODO: GENERACIÓN DE REPORTE DE MEJORAS (AVANZADO)")
+    print("NODO: GENERACIÓN DE REPORTE ACADÉMICO (MARCO TEÓRICO Y ESTADO DEL ARTE)")
     print("="*80)
     
     if not state.get("academic_papers"):
@@ -177,132 +177,90 @@ def generate_report(state: ProjectState) -> Dict[str, Any]:
 
     llm = get_llm()
     
+    # Prepara un resumen de los papers que servirá como contexto principal para el LLM.
     papers_summary = "\n\n".join(
         [f"Fuente: {p.get('source', 'N/A')}\nTítulo: {p.get('title', '')}\nURL: {p.get('url', '')}\nResumen: {p.get('content', '')}"
          for p in state["academic_papers"]]
     )
     
-    # ============================================================================
-    # PASO 1: PROMPT MEJORADO PARA EL REPORTE DE RECOMENDACIONES
-    # ============================================================================
-    print("\n[1/2] Generando reporte de mejoras con recomendaciones...")
+    print("\n[1/1] Generando reporte de Marco Teórico y Estado del Arte...")
     
-    recommendations_prompt = ChatPromptTemplate.from_template(
+    academic_report_prompt = ChatPromptTemplate.from_template(
         """
-        **Rol:** Eres un Consultor Senior de Innovación y Estrategia Tecnológica.
+        **Rol:** Eres un Investigador Senior y Analista Científico con alta especialización en la redacción de documentos técnicos (whitepapers) y secciones de introducción para artículos de investigación (papers).
 
-        **Tarea:** Redactar un reporte de mejoras directivo y accionable para un proyecto tecnológico, basándote en hallazgos de investigación académica. El objetivo es proporcionar valor tangible y guiar al equipo de desarrollo.
+        **Tarea:** Redactar un reporte de fundamentación exhaustivo para un proyecto tecnológico. Tu reporte debe sintetizar la investigación académica proporcionada para construir un sólido **Marco Teórico** y un detallado **Análisis del Estado del Arte**. El objetivo es crear un documento fundacional que justifique la relevancia y la innovación del proyecto.
 
         **Contexto del Proyecto:**
         - Título: {project_title}
         - Descripción: {project_description}
 
-        **Contexto de la Investigación (Hallazgos Académicos):**
+        **Fuentes de Investigación Primarias (Resúmenes de Artículos Académicos):**
         {papers}
 
-        **INSTRUCCIONES CLAVE:**
-        1.  Redacta una **Introducción Ejecutiva** breve que resuma el propósito del reporte.
-        2.  Desarrolla **3 recomendaciones principales**. No más, no menos.
-        3.  **Para CADA recomendación, sigue ESTRICTAMENTE el siguiente formato de 4 puntos:**
-            - **### Título de la Recomendación:** Un título claro y conciso (ej: "Implementación de Fusión de Sensores para Robustez Ambiental").
-            - **- Descripción:** Explica en qué consiste la mejora propuesta.
-            - **- Justificación y Conexión con la Investigación:** Detalla por qué esta mejora es crucial, citando explícitamente los hallazgos de los papers que la respaldan. Usa el formato `(Fuente: [Nombre de la Fuente], Título: [Título del Paper])`.
-            - **- Pasos de Acción Sugeridos:** Enumera 2-3 pasos concretos y prácticos que el equipo puede tomar para implementar la recomendación.
-        4.  Finaliza con una **Conclusión y Próximos Pasos** que resuma el impacto de las mejoras.
-        5.  Usa un lenguaje formal, claro y directivo. Utiliza formato Markdown (`##`, `###`, `**`, `-`) para la estructura.
+        **INSTRUCCIONES DE ALTO NIVEL:**
+        Genera un reporte coherente y bien estructurado que siga rigurosamente el siguiente formato. Sé analítico, profundo y conecta siempre la teoría con el proyecto específico.
 
-        **COMIENZA EL REPORTE DE MEJORAS A CONTINUACIÓN:**
+        ---
+        
+        ## 1. Marco Teórico
+
+        ### 1.1. Conceptos Fundamentales
+        Define los 3-4 conceptos teóricos más cruciales que sustentan este proyecto, basándote en la literatura proporcionada. Para cada concepto, ofrece una explicación clara y su relevancia directa para el problema que {project_title} busca resolver.
+
+        ### 1.2. Modelos y Metodologías Relevantes
+        Describe los modelos (matemáticos, computacionales, etc.), algoritmos o metodologías científicas clave que aparecen en la investigación. No te limites a enumerarlos; explica su funcionamiento a un nivel conceptual y por qué son la base sobre la que se puede construir la solución del proyecto.
+        
+        ### 1.3. Justificación Científica del Enfoque del Proyecto
+        Sintetiza cómo la combinación de los conceptos y modelos anteriores valida el enfoque descrito para el proyecto. Este apartado debe responder a la pregunta: ¿Por qué, desde un punto de vista científico y teórico, es viable y prometedor el camino que propone este proyecto?
+
+        ---
+        
+        ## 2. Análisis del Estado del Arte
+
+        ### 2.1. Técnicas y Enfoques Predominantes
+        Basándote exclusivamente en los papers, resume las soluciones, arquitecturas y tecnologías que se emplean actualmente para abordar el problema central del proyecto. Agrupa enfoques similares si es posible.
+        
+        ### 2.2. Limitaciones Identificadas y Brechas en la Investigación
+        Identifica y detalla los desafíos no resueltos, las limitaciones de los métodos actuales o las "brechas" (gaps) que la propia investigación académica señala. Sé específico. Por ejemplo: "baja precisión en condiciones de poca luz", "alto coste computacional", "falta de datasets estandarizados", etc.
+
+        ### 2.3. Posicionamiento e Innovación Clave del Proyecto
+        Este es el punto más importante. Explica de forma precisa cómo {project_title} se posiciona frente al estado del arte. Argumenta cuál de las limitaciones identificadas en el punto anterior aborda directamente. Define su principal propuesta de valor innovadora en el contexto de la investigación actual.
+
+        ---
+
+        **REQUISITOS ADICIONALES:**
+        - **Lenguaje:** Utiliza un tono formal, objetivo y académico.
+        - **Citas:** Cuando un hallazgo o concepto provenga de una fuente específica, referéncialo sutilmente en el texto. Ejemplo: "...tal como se demuestra en el estudio sobre Fusión de Sensores (Fuente: [Nombre de la Fuente], Título: [Título del Paper])".
+        - **Formato:** Usa formato Markdown (`##`, `###`, `**`, `-`) para garantizar una estructura limpia y legible.
+
+        **COMIENZA EL REPORTE A CONTINUACIÓN:**
         """
     )
     
-    recommendations_chain = recommendations_prompt | llm
-    recommendations_response = recommendations_chain.invoke({
+    report_chain = academic_report_prompt | llm
+    report_response = report_chain.invoke({
         "project_title": state["project_title"],
         "project_description": state["project_description"],
         "papers": papers_summary
     })
-    recommendations_content = recommendations_response.content
-    print("   Recomendaciones generadas")
+    academic_content = report_response.content
+    print("   -> Reporte académico completo generado.")
     
-    # ============================================================================
-    # PASO 2: PROMPT MEJORADO PARA LA PROPUESTA CONCEPTUAL
-    # ============================================================================
-    print("\n[2/2] Generando propuesta conceptual del proyecto...")
-    
-    project_title = state.get("project_title", "Proyecto")
-    selected_opportunities = state.get("selected_opportunities", [])
-    opportunities_context = "\n".join([
-        f"- {opp.get('origin', 'N/A')}: {opp.get('description', 'N/A')}"
-        for opp in selected_opportunities
-    ]) if selected_opportunities else "No se seleccionaron oportunidades específicas."
-    
-    proposal_prompt = ChatPromptTemplate.from_template(
-        """
-        **Rol:** Eres un Director de Estrategia e Innovación, experto en la redacción de propuestas de financiación para proyectos de alta tecnología (Deep Tech).
-
-        **Audiencia:** Tu escrito será leído por inversionistas de capital de riesgo, comités de evaluación de subvenciones gubernamentales y socios estratégicos.
-
-        **Tarea:** Transformar un reporte técnico de mejoras en una **Propuesta Conceptual** completa, convincente y orientada a resultados.
-
-        **MATERIAL DE ORIGEN:**
-        1.  **Información del Proyecto Original:**
-            - Título: {project_title}
-            - Descripción: {project_description}
-        2.  **Oportunidades de Financiación Identificadas:**
-            {opportunities_context}
-        3.  **Reporte de Mejoras y Recomendaciones Técnicas (que acabas de generar):**
-            {recommendations}
-
-        **INSTRUCCIONES DETALLADAS PARA LA PROPUESTA:**
-        Genera una propuesta conceptual que siga esta estructura rigurosa. Sé detallado y convincente en cada sección:
-
-        1.  **Visión General del Proyecto Mejorado (Elevator Pitch):** En un párrafo conciso, describe el problema que se resuelve, la solución innovadora propuesta (integrando las recomendaciones) y el impacto esperado.
-        2.  **Objetivos Estratégicos (Formato SMART):** Define 3-4 objetivos claros, medibles y con un plazo definido (ej: "Reducir los falsos positivos en un 40% en 18 meses...").
-        3.  **Arquitectura Técnica del Sistema:** Describe los componentes principales de forma detallada, dividiéndolos en:
-            - **Componentes de Hardware:** (ej: Drones, tipo de sensores, hardware de computación en el borde).
-            - **Plataforma de Software/Nube:** (ej: Centro de control, base de datos, API, dashboard de visualización).
-            - **Motor de Inteligencia Artificial:** Explica los modelos clave que se usarán, basándote en las recomendaciones (ej: "Modelo de Fusión de Datos SAR-Óptico", "Clasificador Basado en Few-Shot Learning").
-        4.  **Innovaciones Clave y Ventaja Competitiva:** Destaca 2-3 innovaciones que hacen a este proyecto único. Explica por qué es difícil de replicar (su "foso competitivo").
-        5.  **Beneficios Esperados y KPIs:** Cuantifica los beneficios. Usa métricas y KPIs (Key Performance Indicators) claros. (ej: "Reducción de costos de monitoreo en un 30%", "Aumento de la cobertura operativa en un 50% en temporada de lluvias", "Tiempo de detección reducido de semanas a horas").
-        6.  **Alineación Estratégica con Oportunidades de Financiación:** Para cada oportunidad identificada, escribe un párrafo explicando explícitamente cómo este proyecto mejorado cumple con sus requisitos y objetivos. Sé directo: "Para la oportunidad X, nuestro enfoque en [innovación clave] aborda directamente su objetivo de [objetivo de la oportunidad]".
-        7.  **Roadmap de Implementación por Fases:** Propón un plan de 3-4 fases con duraciones estimadas y entregables clave para cada una. (ej: "Fase 1 (Meses 1-6): Prototipado de Modelos IA y Selección de Hardware...").
-
-        Usa un tono profesional, convincente y basado en datos. Evita la jerga vaga. Utiliza formato Markdown (`##`, `###`, `**`, `-`) para la estructura.
-
-        **COMIENZA LA PROPUESTA CONCEPTUAL DEL PROYECTO A CONTINUACIÓN:**
-        """
-    )
-    
-    proposal_chain = proposal_prompt | llm
-    proposal_response = proposal_chain.invoke({
-        "project_title": project_title,
-        "project_description": state["project_description"],
-        "opportunities_context": opportunities_context,
-        "recommendations": recommendations_content
-    })
-    proposal_content = proposal_response.content
-    print("   Propuesta conceptual generada")
-    
-    # --- ENSAMBLAJE FINAL DEL REPORTE (sin cambios en la lógica) ---
+    # --- ENSAMBLAJE FINAL DEL REPORTE ---
     current_date = datetime.now().strftime("%d de %B de %Y")
     academic_sources = "\n".join([f"- [{p.get('source', 'N/A')}] {p.get('title', 'N/A')}\n  URL: {p.get('url', 'No disponible')}" for p in state.get("academic_papers", [])])
-    web_sources = "\n".join([f"- {res.get('title', 'N/A')}\n  URL: {res.get('url', 'No disponible')}" for res in state.get("relevant_results", [])])
+    #web_sources = "\n".join([f"- {res.get('title', 'N/A')}\n  URL: {res.get('url', 'No disponible')}" for res in state.get("relevant_results", [])])
 
     full_report = f"""
-# PROPUESTA CONCEPTUAL Y REPORTE DE MEJORAS
+# Reporte de Fundamentación y Estado del Arte
 
 **Proyecto:** {state.get('project_title', 'N/A')}
 **Fecha de Generación:** {current_date}
 
 ---
-## 1. Reporte de Mejoras y Recomendaciones
 
-{recommendations_content}
-
----
-## 2. Propuesta Conceptual del Proyecto Mejorado
-
-{proposal_content}
+{academic_content}
 
 ---
 ## 3. Fuentes y Referencias
@@ -310,20 +268,22 @@ def generate_report(state: ProjectState) -> Dict[str, Any]:
 ### Artículos Académicos Consultados
 {academic_sources if academic_sources else "No se encontraron artículos académicos."}
 
-### Fuentes Web Relevantes
-{web_sources if web_sources else "No se encontraron fuentes web relevantes."}
+
 """
+
+### Fuentes Web Relevantes
+#{web_sources if web_sources else "No se encontraron fuentes web relevantes."}
     
     print(f"\n{'='*80}")
-    print("REPORTE COMPLETO GENERADO Y FORMATEADO (CON PROMPTS MEJORADOS)")
+    print("REPORTE COMPLETO GENERADO Y FORMATEADO")
     print(f"{'='*80}\n")
     
     return {
         "improvement_report": full_report,
-        "report_type": "general",
+        "report_type": "general",  
         "messages": [{
             "role": "assistant",
-            "content": "He finalizado el reporte de mejoras y la propuesta conceptual. Ahora procederé a guardarlo como un archivo PDF."
+            "content": "He finalizado el reporte de fundamentación, incluyendo el marco teórico y el estado del arte. Ahora procederé a guardarlo como un archivo PDF."
         }]
     }
 
