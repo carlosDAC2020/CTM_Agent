@@ -43,6 +43,7 @@ class ScrutinyResult(BaseModel):
     )
     justification: str = Field(description="A brief explanation for the chosen category.")
 
+
 class FundingOpportunity(BaseModel):
     """Modelo para una oportunidad de financiación."""
     origin: str = Field(description="Nombre de la organización que ofrece la financiación.")

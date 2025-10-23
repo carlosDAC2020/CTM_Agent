@@ -1,6 +1,5 @@
 FROM langchain/langgraph-api:3.11-wolfi
 
-
 # -- Adding local package . --
 ADD . /deps/ctm-investment-agent
 # -- End of local package . --
@@ -22,7 +21,5 @@ RUN pip uninstall -y pip setuptools wheel
 RUN rm -rf /usr/local/lib/python*/site-packages/pip* /usr/local/lib/python*/site-packages/setuptools* /usr/local/lib/python*/site-packages/wheel* && find /usr/local/bin -name "pip*" -delete || true
 RUN rm -rf /usr/lib/python*/site-packages/pip* /usr/lib/python*/site-packages/setuptools* /usr/lib/python*/site-packages/wheel* && find /usr/bin -name "pip*" -delete || true
 RUN uv pip uninstall --system pip setuptools wheel && rm /usr/bin/uv /usr/bin/uvx
-
-
 
 WORKDIR /deps/ctm-investment-agent
