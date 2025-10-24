@@ -63,7 +63,7 @@ class FundingOpportunityList(BaseModel):
 # PASO 1: GENERACIÓN DE QUERIES
 # ============================================================================
 
-def generate_search_queries(project_details: str, llm) -> List[str]:
+def generate_funding_search_queries(project_details: str, llm) -> List[str]:
     """
     Genera queries de búsqueda estratégicas basadas en la descripción del proyecto.
     
@@ -365,7 +365,7 @@ def extract_opportunities(relevant_results: List[Dict], llm) -> List[Dict]:
 # ============================================================================
 
 # NODO 1: Genera las queries de búsqueda
-def generate_queries_node(state: ProjectState) -> Dict[str, Any]:
+def generate_funding_queries_node(state: ProjectState) -> Dict[str, Any]:
     """
     Nodo que genera las queries de búsqueda y las guarda en el estado.
     """
@@ -399,8 +399,7 @@ def generate_queries_node(state: ProjectState) -> Dict[str, Any]:
     else:
         print("   -> No hay oportunidades previas. Iniciando búsqueda desde cero.")
     
-    # Llama a tu función original, que ya hace el trabajo pesado
-    queries = generate_search_queries(project_details, llm)
+    queries = generate_funding_search_queries(project_details, llm)
     
     # Devuelve un diccionario para actualizar el estado
     return {"search_queries": queries}
@@ -445,7 +444,8 @@ def scrutinize_results_node(state: ProjectState) -> Dict[str, Any]:
 # NODO 4: Extrae las oportunidades estructuradas
 def extract_opportunities_node(state: ProjectState) -> Dict[str, Any]:
     """
-    Nodo final que extrae los datos y los AÑADE a la lista existente de oportunidades.
+    Nodo final que extrae los datos y los AÑADE al historial completo.
+    ✅ Ahora usa 'all_opportunities_history' para acumular TODO.
     """
     print("\n" + "="*80)
     print("NODO: Extrayendo y Acumulando Oportunidades")
@@ -453,38 +453,56 @@ def extract_opportunities_node(state: ProjectState) -> Dict[str, Any]:
 
     llm = get_llm()
     relevant = state.get("relevant_results", [])
+    
+    # ✅ Obtener el HISTORIAL COMPLETO (todas las oportunidades de todas las búsquedas)
+    all_history = state.get("all_opportunities_history", [])
+    
     if not relevant:
-        # Si no hay nuevos resultados relevantes, no hacemos nada y mantenemos las oportunidades existentes
-        print("   -> No se encontraron nuevos resultados relevantes. No se añaden oportunidades.")
-        return {}
+        print("   -> No se encontraron nuevos resultados relevantes.")
+        return {
+            "investment_opportunities": [],  # ✅ Limpiar las de la búsqueda actual
+            "all_opportunities_history": all_history  # ✅ Mantener el historial
+        }
 
-    # Llama a tu función original para extraer las NUEVAS oportunidades
+    # Extraer las NUEVAS oportunidades
     new_opportunities = extract_opportunities(relevant, llm)
     
-    existing_opportunities = state.get("investment_opportunities", [])
+    if not new_opportunities:
+        print("   -> No se pudieron extraer oportunidades.")
+        return {
+            "investment_opportunities": [],
+            "all_opportunities_history": all_history
+        }
     
-
-    # Creamos un conjunto (set) de descripciones existentes para una búsqueda rápida
-    existing_descs = {opp['description'].lower() for opp in existing_opportunities}
+    # ✅ Crear firmas del HISTORIAL COMPLETO para evitar duplicados globales
+    existing_signatures = {
+        (opp.get('origin', '').lower(), opp.get('description', '').lower()) 
+        for opp in all_history
+    }
     
-    # Filtramos las nuevas oportunidades para quedarnos solo con las que no existen ya
-    unique_new_opportunities = [
-        opp for opp in new_opportunities if opp['description'].lower() not in existing_descs
-    ]
-    
+    # Filtrar duplicados
+    unique_new_opportunities = []
+    for opp in new_opportunities:
+        signature = (opp.get('origin', '').lower(), opp.get('description', '').lower())
+        if signature not in existing_signatures:
+            unique_new_opportunities.append(opp)
+            existing_signatures.add(signature)
     
     print(f"   -> Se extrajeron {len(new_opportunities)} nuevas oportunidades.")
-    print(f"   -> Se añadirán {len(unique_new_opportunities)} oportunidades únicas al estado.")
+    print(f"   -> Se añadirán {len(unique_new_opportunities)} oportunidades únicas.")
 
-    # Combinamos la lista existente con las nuevas oportunidades únicas
-    updated_opportunities = existing_opportunities + unique_new_opportunities
+    # ✅ Actualizar el HISTORIAL COMPLETO
+    updated_history = all_history + unique_new_opportunities
     
     message = {
         "role": "assistant",
-        "content": f"✅ Nueva investigación completada. Se añadieron {len(unique_new_opportunities)} oportunidades nuevas. Ahora tienes un total de {len(updated_opportunities)}."
+        "content": f"✅ Nueva búsqueda completada. Se encontraron {len(unique_new_opportunities)} oportunidades nuevas. Total en historial: {len(updated_history)}."
     }
     
     return {
-        "investment_opportunities": updated_opportunities,
+        # ✅ Las nuevas oportunidades únicas se presentan para selección
+        "investment_opportunities": unique_new_opportunities,
+        # ✅ Se añaden al historial completo
+        "all_opportunities_history": updated_history,
         "messages": [message]
     }

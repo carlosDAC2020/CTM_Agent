@@ -1,168 +1,150 @@
 # src/agent/nodes/analysis.py
 
+
 from typing import Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 from datetime import datetime
 
-# --- ¡NUEVAS IMPORTACIONES PARA HERRAMIENTAS ACADÉMICAS! ---
+# Importaciones para herramientas académicas
 from langchain_community.retrievers import ArxivRetriever
 from langchain_community.utilities.semanticscholar import SemanticScholarAPIWrapper
 
 from ..state import ProjectState
 from ..config import get_llm
 
+# ============================================================================
+# MODELOS DE DATOS Y LÓGICA COMPARTIDA
+# ============================================================================
 
-# Modelo para las queries académicas
 class AcademicQueries(BaseModel):
-    """Lista de queries de búsqueda académica."""
+    """Define la estructura para las queries de búsqueda académica."""
     queries: List[str] = Field(description="Lista de 3 queries de búsqueda para papers académicos")
 
-# --- NODO 1: INVESTIGACIÓN ACADÉMICA (VERSIÓN CON HERRAMIENTAS ESPECIALIZADAS) ---
-def academic_research(state: ProjectState) -> Dict[str, Any]:
+# ============================================================================
+# NODO 1: GENERADOR DE QUERIES ACADÉMICAS
+# ============================================================================
+
+def generate_academic_queries_node(state: ProjectState) -> Dict[str, Any]:
     """
-    Busca papers académicos relevantes y los AÑADE a la lista existente,
-    evitando duplicados.
+    NODO: Genera las queries iniciales para la investigación de Estado del Arte.
+    Este es el primer paso del nuevo flujo principal.
     """
     print("\n" + "="*80)
-    print("NODO: INVESTIGACIÓN ACADÉMICA (Con Memoria)")
+    print("NODO: Generando Queries de Búsqueda Académica (Estado del Arte)")
     print("="*80)
-    
-    selected_opportunities = state.get("selected_opportunities")
-    if not selected_opportunities:
-        print("   -> No hay oportunidades seleccionadas. Saltando este paso.")
-        # Retornamos un diccionario vacío para no modificar el estado existente.
-        return {}
-    
-    print(f"\n   Analizando {len(selected_opportunities)} oportunidades seleccionadas...")
-        
-    llm = get_llm()
-    
-    # --- 1. Inicializar las herramientas especializadas ---
-    print("   -> Inicializando herramientas: Arxiv, Semantic Scholar")
-    try:
-        arxiv_retriever = ArxivRetriever(load_max_docs=2, doc_content_chars_max=1000)
-        semantic_scholar = SemanticScholarAPIWrapper(top_k_results=3)
-    except Exception as e:
-        print(f"   Error inicializando herramientas: {e}")
-        return {}
 
-    # --- 2. Generar múltiples queries de búsqueda ---
-    # (Esta sección de tu código ya es correcta)
+    llm = get_llm()
     parser = JsonOutputParser(pydantic_object=AcademicQueries)
-    system_prompt = """Eres un asistente de investigación académica. 
-    Basado en un proyecto y las oportunidades de financiación seleccionadas, 
-    genera 3 queries de búsqueda efectivas para encontrar papers relevantes en ArXiv y Semantic Scholar.
-    Usa términos técnicos y concisos en inglés. Enfócate en los aspectos técnicos y científicos del proyecto.
+    
+    system_prompt = """
+    Eres un asistente de investigación. Basado en la descripción de un proyecto, 
+    genera 3 queries de búsqueda efectivas y concisas en inglés para encontrar 
+    papers sobre el marco teórico y el estado del arte en ArXiv y Semantic Scholar.
+    Enfócate en los aspectos técnicos y científicos clave.
     {format_instructions}
     """
+    
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
-        ("human", "PROYECTO: {project_description}\n\nOPORTUNIDADES SELECCIONADAS:\n{opportunity}")
+        ("human", "Título del Proyecto: {project_title}\nDescripción: {project_description}")
     ])
-    query_generation_chain = prompt | llm | parser
-    opportunities_summary = "\n".join([f"- {opp.get('description', '')}" for opp in selected_opportunities])
     
-    print("\n[1/3] Generando queries de búsqueda académica...")
+    chain = prompt | llm | parser
+    
     try:
-        response = query_generation_chain.invoke({
+        response = chain.invoke({
+            "project_title": state["project_title"],
             "project_description": state["project_description"],
-            "opportunity": opportunities_summary,
             "format_instructions": parser.get_format_instructions()
         })
         search_queries = response.get('queries', [])
-        print(f"   Generadas {len(search_queries)} queries")
+        print(f"   -> Queries académicas generadas: {search_queries}")
+        return {"search_queries": search_queries}
     except Exception as e:
-        print(f"   Error generando queries académicas: {e}")
+        print(f"   ⚠️ Error generando queries académicas: {e}")
+        return {"search_queries": []}
+
+# ============================================================================
+# NODO 2: EJECUTOR DE BÚSQUEDA ACADÉMICA
+# ============================================================================
+
+def academic_research(state: ProjectState) -> Dict[str, Any]:
+    """
+    NODO: Ejecuta las búsquedas en Arxiv y Semantic Scholar usando las queries del estado.
+    Acumula los resultados y evita duplicados.
+    """
+    print("\n" + "="*80)
+    print("NODO: Ejecutando Búsqueda Académica (Con Memoria)")
+    print("="*80)
+    
+    search_queries = state.get("search_queries")
+    if not search_queries:
+        print("   -> No hay queries de búsqueda. Saltando este paso.")
+        return {}
+    
+    print(f"   -> Ejecutando {len(search_queries)} queries de búsqueda...")
+    
+    # --- Inicializar herramientas ---
+    try:
+        arxiv_retriever = ArxivRetriever(load_max_docs=3, doc_content_chars_max=1500)
+        semantic_scholar = SemanticScholarAPIWrapper(top_k_results=3)
+    except Exception as e:
+        print(f"   ⚠️ Error inicializando herramientas de búsqueda: {e}")
         return {}
 
-    # --- 3. Ejecutar búsquedas en ambas herramientas ---
-    print("\n[2/3] Buscando papers académicos...")
-    newly_found_papers = [] # Usamos una nueva lista para los hallazgos de esta ronda
-    
-    for idx, query in enumerate(search_queries, 1):
-        print(f"\n   Query {idx}/{len(search_queries)}: '{query[:60]}...'")
-        
-        # Búsqueda en Arxiv
-        try:
-            print("      → Buscando en Arxiv...")
+    # --- Ejecutar búsquedas ---
+    newly_found_papers = []
+    for query in search_queries:
+        try: # Arxiv
             arxiv_docs = arxiv_retriever.invoke(query)
-            print(f"        Arxiv: {len(arxiv_docs)} documentos")
             for doc in arxiv_docs:
                 newly_found_papers.append({
                     "title": doc.metadata.get("Title", "N/A"),
                     "url": doc.metadata.get("Entry ID", "N/A").replace("http://arxiv.org/abs/", "https://arxiv.org/pdf/"),
-                    "content": doc.page_content[:500] if doc.page_content else "No content",
-                    "source": "Arxiv"
+                    "content": doc.page_content, "source": "Arxiv"
                 })
         except Exception as e:
-            print(f"        Error en Arxiv: {str(e)[:100]}")
+            print(f"        Error en Arxiv para query '{query}': {e}")
 
-        # Búsqueda en Semantic Scholar (Corregido a .run)
-        try:
-            print("      → Buscando en Semantic Scholar...")
-            # Usamos .run() que es más estándar para las herramientas LangChain
+        try: # Semantic Scholar
             ss_docs = semantic_scholar.run(query)
-            # La salida de .run() puede variar, asumimos que devuelve una lista de diccionarios
             if isinstance(ss_docs, list):
-                print(f"        Semantic Scholar: {len(ss_docs)} documentos")
                 for doc in ss_docs:
                     newly_found_papers.append({
                         "title": doc.get("title", "N/A"),
                         "url": doc.get("url", "N/A"),
-                        "content": doc.get("abstract", "No abstract available."),
-                        "source": "Semantic Scholar"
+                        "content": doc.get("abstract", "No abstract."), "source": "Semantic Scholar"
                     })
         except Exception as e:
-            print(f"        Error en Semantic Scholar: {str(e)[:100]}")
+            print(f"        Error en Semantic Scholar para query '{query}': {e}")
 
-    # --- 4. ACUMULAR, UNIFICAR Y ELIMINAR DUPLICADOS ---
-    print("\n[3/3] Procesando y acumulando resultados...")
-    
-    # Obtenemos los papers que ya existían en el estado (con un valor por defecto seguro)
+    # --- Acumular y Desduplicar Resultados ---
     existing_papers = state.get("academic_papers", [])
-    print(f"   -> Papers existentes en el estado: {len(existing_papers)}")
-    
-    # Combinamos la lista existente con los nuevos hallazgos de esta búsqueda
     combined_papers = existing_papers + newly_found_papers
     
-    # Aplicamos la lógica de desduplicación sobre la lista COMPLETA
     unique_papers_dict = {
         paper.get("title", "").lower().strip(): paper 
-        for paper in combined_papers if paper.get("title") and paper.get("title", "N/A") != "N/A"
+        for paper in combined_papers if paper.get("title", "N/A") != "N/A"
     }
     final_papers_list = list(unique_papers_dict.values())
     
     newly_added_count = len(final_papers_list) - len(existing_papers)
+    print(f"   -> Se añadieron {newly_added_count} papers únicos. Total en colección: {len(final_papers_list)}")
     
-    print(f"\n   Total de papers encontrados en esta búsqueda: {len(newly_found_papers)}")
-    print(f"   Se añadieron {newly_added_count} papers únicos a la colección.")
-    print(f"   Total de papers acumulados: {len(final_papers_list)}")
+    message = f"He realizado la investigación y acumulado un total de {len(final_papers_list)} artículos. Ahora generaré el reporte de Marco Teórico."
     
-    if final_papers_list:
-        print("\n   Colección actual de papers (primeros 5):")
-        for idx, paper in enumerate(final_papers_list[:5], 1):
-            print(f"      {idx}. [{paper.get('source', 'N/A')}] {paper.get('title', 'N/A')[:60]}...")
-    
-    message_content = (f"He realizado la investigación académica y añadido {newly_added_count} artículos nuevos, "
-                       f"para un total de {len(final_papers_list)} en la colección. "
-                       "Ahora procederé a generar el reporte de mejoras.")
-    if newly_added_count == 0 and not final_papers_list:
-        message_content = "No encontré nuevos artículos académicos relevantes en esta búsqueda."
-    
-    print(f"\n{'='*80}")
-    print(f"INVESTIGACIÓN ACADÉMICA COMPLETADA: {len(final_papers_list)} papers totales")
-    print(f"{'='*80}\n")
-
     return {
         "academic_papers": final_papers_list,
-        "messages": [{"role": "assistant", "content": message_content}]
+        "messages": [{"role": "assistant", "content": message}]
     }
 
-    
-# --- NODO 2: GENERACIÓN DE REPORTE ---
-def generate_report(state: ProjectState) -> Dict[str, Any]:
+# ============================================================================
+# NODO 3: GENERADOR DE REPORTE DE ESTADO DEL ARTE
+# ============================================================================
+
+def generate_state_of_the_art_report(state: ProjectState) -> Dict[str, Any]:
     """
     Genera un reporte académico que establece el marco teórico y el estado del arte
     del proyecto, basándose en la investigación académica proporcionada.
@@ -289,7 +271,7 @@ def generate_report(state: ProjectState) -> Dict[str, Any]:
 
 
 # ============================================================================
-# NODO DUMMY PARA REPORTE ESPECÍFICO
+# NODO PARA REPORTE ESPECÍFICO
 # ============================================================================
 def generate_specific_report(state: ProjectState) -> Dict[str, Any]:
     """

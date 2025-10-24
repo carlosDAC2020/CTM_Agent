@@ -1,37 +1,68 @@
 # src/agent/state.py
 
-from typing import List, TypedDict, Any
+from typing import List, TypedDict, Any, Optional
 from langchain_core.messages import HumanMessage, AIMessage
 
-class ProjectState(TypedDict):
+class ProjectState(TypedDict, total=False):
     """
     Representa el estado completo de un proyecto a lo largo del tiempo.
-    Esta es la memoria principal de nuestro grafo.
     """
     # --- Información de Entrada ---
     project_title: str
     project_description: str
-    document_paths: List[str] 
+    document_paths: List[str]
 
     # --- Búsqueda de Información ---
     search_queries: List[str]
     search_results: List[dict]
     relevant_results: List[dict]
 
-    # --- Resultados de los Nodos (se irán llenando) ---
+    # --- Resultados de los Nodos ---
+    # ✅ NUEVO: Historial completo de TODAS las oportunidades encontradas
+    all_opportunities_history: List[dict]
+    
+    # ✅ Oportunidades de la ÚLTIMA búsqueda (las que se presentan para selección)
     investment_opportunities: List[dict]
+    
+    # ✅ Oportunidades que el usuario HA SELECCIONADO para análisis académico
     selected_opportunities: List[dict]
+    
     academic_papers: List[dict]
-    improvement_report: str
+    improvement_report: Optional[str]
     report_paths: List[str]
 
     # --- Clave Temporal para Interrupción ---
-    user_selection: Any 
+    user_selection: Any
 
     # --- Historial de Conversación ---
-    messages: list[HumanMessage | AIMessage]
+    messages: List[HumanMessage | AIMessage]
 
     # ---- Routing de acciones ---------------
-    next_action: str  # 'continue', 'rerun_research', 'specific_report', 'end'
-    action_input: Any # Para datos extra, como el índice de la oportunidad
-    report_type: str # tipo de generacion de reporte 'general' o 'specific'
+    next_action: Optional[str]
+    action_input: Any
+    report_type: Optional[str]
+
+
+def create_initial_state(project_title: str, project_description: str) -> ProjectState:
+    """
+    Crea un estado inicial con todos los campos correctamente inicializados.
+    """
+    return {
+        "project_title": project_title,
+        "project_description": project_description,
+        "document_paths": [],
+        "search_queries": [],
+        "search_results": [],
+        "relevant_results": [],
+        "all_opportunities_history": [],  # ✅ Historial completo
+        "investment_opportunities": [],   # ✅ Oportunidades de la última búsqueda
+        "selected_opportunities": [],      # ✅ Seleccionadas para análisis
+        "academic_papers": [],
+        "improvement_report": None,
+        "report_paths": [],
+        "user_selection": None,
+        "messages": [],
+        "next_action": None,
+        "action_input": None,
+        "report_type": None,
+    }
