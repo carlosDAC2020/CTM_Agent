@@ -7,6 +7,9 @@ class ProjectState(TypedDict, total=False):
     """
     Representa el estado completo de un proyecto a lo largo del tiempo.
     """
+    # --- ID de Ejecución ---
+    thread_id: str
+
     # --- Información de Entrada ---
     project_title: str
     project_description: str
@@ -18,13 +21,8 @@ class ProjectState(TypedDict, total=False):
     relevant_results: List[dict]
 
     # --- Resultados de los Nodos ---
-    # ✅ NUEVO: Historial completo de TODAS las oportunidades encontradas
     all_opportunities_history: List[dict]
-    
-    # ✅ Oportunidades de la ÚLTIMA búsqueda (las que se presentan para selección)
     investment_opportunities: List[dict]
-    
-    # ✅ Oportunidades que el usuario HA SELECCIONADO para análisis académico
     selected_opportunities: List[dict]
     
     academic_papers: List[dict]
