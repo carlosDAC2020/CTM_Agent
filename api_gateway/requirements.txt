@@ -1,0 +1,9 @@
+# api_gateway/requirements.txt
+django
+djangorestframework
+psycopg2-binary
+django-cors-headers
+channels
+channels-redis
+daphne
+httpx 

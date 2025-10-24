@@ -1,39 +1,58 @@
 version: '3.8'
 
 services:
-  # 1. Servicio del Agente 
+  # 1. Servicio del Agente (Tu App LangGraph)
   agent:
     build:
       context: ./ctm-investment-agent
       dockerfile: Dockerfile
     container_name: langgraph-agent
-    env_file:
-      - .env  
+    env_file: .env
     ports:
       - "8000:8000"
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - db
+      - redis
+      - chroma  
+      - minio
     restart: unless-stopped
+    networks:
+      - ctm_network
+  
+  api_gateway:
+    build:
+      context: ./api_gateway
+      dockerfile: Dockerfile
+    container_name: drf-api-orquestador
+    volumes:
+      - ./api_gateway:/app
+    ports:
+      - "8001:8001"
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+      - agent
+    networks:
+      - ctm_network
 
   # 2. Servicio de Base de Datos (PostgreSQL)
   db:
     image: postgres:16-alpine
     container_name: langgraph-db
-    env_file:
-      - .env 
+    env_file: .env
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"] 
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - ctm_network
 
   # 3. Servicio de Cache/Cola (Redis)
   redis:
@@ -49,13 +68,55 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - ctm_network
 
-  # 4. Servicio de Admin de BD (PgAdmin)
+  # 4. Servicio de Base de Datos Vectorial (ChromaDB)
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: langgraph-chroma
+    ports:
+      - "8002:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - ctm_network
+      
+  # 5. Servicio de Almacenamiento de Archivos (MinIO, compatible con S3)
+  minio:
+    image: minio/minio:latest
+    container_name: langgraph-minio
+    env_file: .env # Carga las credenciales de MinIO
+    ports:
+      - "9000:9000" # Puerto de la API de S3
+      - "9001:9001" # Puerto de la Interfaz Web de MinIO
+    volumes:
+      - minio_data:/data # Persiste los archivos subidos
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ctm_network
+
+  # 6. Servicio de Admin de BD (PgAdmin)
   pgadmin:
     image: dpage/pgadmin4
     container_name: langgraph-pgadmin
-    env_file:
-      - .env
+    env_file: .env
     ports:
       - "5050:80"
     depends_on:
@@ -63,8 +124,17 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     restart: unless-stopped
+    networks:
+      - ctm_network
 
+# Definimos los nuevos volúmenes para persistir datos
 volumes:
   postgres_data:
   redis_data:
   pgadmin_data:
+  chroma_data:   
+  minio_data:    
+
+# Definimos una red común para que todos los servicios puedan comunicarse
+networks:
+  ctm_network:

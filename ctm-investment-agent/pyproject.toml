@@ -18,7 +18,10 @@ dependencies = [
     "tavily-python",
     "semanticscholar",
     "arxiv",
-    "langchain-community"
+    "langchain-community",
+    "chromadb",          
+    "boto3",             
+    "sentence-transformers"
 ]
 
 
