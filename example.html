@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cliente para CTM Agent</title>
+    <style>
+        :root {
+            --primary-color: #003366;
+            --secondary-color: #0066CC;
+            --background-color: #f4f7f9;
+            --text-color: #333;
+            --border-color: #ccc;
+            --log-bg-color: #2b2b2b;
+            --log-text-color: #f1f1f1;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        h1, h2 {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--secondary-color);
+            padding-bottom: 10px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        button {
+            padding: 12px 20px;
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: var(--primary-color);
+        }
+        button:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+        #chat-container {
+            margin-top: 30px;
+            display: none; /* Oculto por defecto */
+        }
+        #log-area {
+            background-color: var(--log-bg-color);
+            color: var(--log-text-color);
+            font-family: "Courier New", Courier, monospace;
+            padding: 15px;
+            border-radius: 4px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 15px;
+        }
+        #interaction-area {
+            display: flex;
+            gap: 10px;
+        }
+        #user-input {
+            flex-grow: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cliente del Agente CTM</h1>
+
+        <!-- Formulario de Creación de Proyecto -->
+        <div id="project-form-container">
+            <h2>1. Crear Nuevo Proyecto</h2>
+            <form id="project-form">
+                <div class="form-group">
+                    <label for="title">Título del Proyecto</label>
+                    <input type="text" id="title" name="title" required>
+                </div>
+                <div class="form-group">
+                    <label for="description">Descripción</label>
+                    <textarea id="description" name="description" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="documents">Documentos (PDF, TXT, etc.)</label>
+                    <input type="file" id="documents" name="documents" multiple>
+                </div>
+                <button type="submit" id="submit-button">Crear y Arrancar Agente</button>
+            </form>
+        </div>
+
+        <!-- Contenedor del Chat y Logs -->
+        <div id="chat-container">
+            <h2>2. Interacción con el Agente</h2>
+            <div id="log-area">
+                <p>Esperando conexión...</p>
+            </div>
+            <div id="interaction-area">
+                <input type="text" id="user-input" placeholder="Escribe tu respuesta aquí..." disabled>
+                <button id="send-button" disabled>Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURACIÓN ---
+        const API_BASE_URL = 'http://localhost:8001';
+        const WS_BASE_URL = 'ws://localhost:8001';
+        
+        // --- ELEMENTOS DEL DOM ---
+        const projectForm = document.getElementById('project-form');
+        const submitButton = document.getElementById('submit-button');
+        const chatContainer = document.getElementById('chat-container');
+        const logArea = document.getElementById('log-area');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+
+        let threadId = null;
+        let socket = null;
+
+        // --- MANEJADOR DEL FORMULARIO ---
+        projectForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            submitButton.disabled = true;
+            submitButton.textContent = 'Procesando...';
+            
+            const formData = new FormData();
+            formData.append('title', document.getElementById('title').value);
+            formData.append('description', document.getElementById('description').value);
+            
+            const files = document.getElementById('documents').files;
+            for (let i = 0; i < files.length; i++) {
+                formData.append('documents', files[i]);
+            }
+
+            // =================================================================
+            // ¡IMPORTANTE! Manejo de la Autenticación
+            // Reemplaza 'TU_TOKEN_JWT_AQUI' con el token de acceso real.
+            // Necesitarás un endpoint de login en tu API para obtener este token.
+            // =================================================================
+            const authToken = 'TU_TOKEN_JWT_AQUI'; 
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/projects/`, {
+                    method: 'POST',
+                    headers: {
+                        // DRF necesita este header para la autenticación por token
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData // No necesitas 'Content-Type', el navegador lo pone por ti con FormData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Ocurrió un error al crear el proyecto.');
+                }
+
+                threadId = data.thread_id;
+                logToScreen(`Proyecto creado con éxito. Thread ID: ${threadId}`);
+                
+                // Ocultar formulario y mostrar chat
+                document.getElementById('project-form-container').style.display = 'none';
+                chatContainer.style.display = 'block';
+                logArea.innerHTML = ''; // Limpiar logs iniciales
+                
+                connectWebSocket(threadId);
+
+            } catch (error) {
+                logToScreen(`ERROR: ${error.message}`, true);
+                submitButton.disabled = false;
+                submitButton.textContent = 'Crear y Arrancar Agente';
+            }
+        });
+
+        // --- LÓGICA DEL WEBSOCKET ---
+        function connectWebSocket(threadId) {
+            logToScreen(`Conectando al WebSocket para el hilo ${threadId}...`);
+            const wsUrl = `${WS_BASE_URL}/ws/chat/${threadId}/`;
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = () => {
+                logToScreen('✅ Conexión WebSocket establecida. El agente ha comenzado a ejecutarse.');
+            };
+
+            socket.onmessage = (event) => {
+                const messageData = JSON.parse(event.data);
+                
+                // Muestra el evento crudo en el log
+                logToScreen(`[EVENTO RECIBIDO]:\n${JSON.stringify(messageData, null, 2)}`);
+
+                // Lógica para detectar una interrupción y habilitar la entrada del usuario
+                // Debes ajustar 'interrupt' y 'payload.instruction' según la estructura
+                // exacta de los mensajes de tu agente.
+                if (messageData.type === 'interrupt' && messageData.payload.instruction) {
+                    logToScreen(`[ACCIÓN REQUERIDA]: ${messageData.payload.instruction}`);
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    userInput.focus();
+                }
+            };
+
+            socket.onerror = (error) => {
+                logToScreen('❌ Error en la conexión WebSocket.', true);
+                console.error('WebSocket Error:', error);
+                disableChat();
+            };
+
+            socket.onclose = () => {
+                logToScreen('🔌 Conexión WebSocket cerrada.');
+                disableChat();
+            };
+        }
+        
+        // --- LÓGICA DE ENVÍO DE MENSAJES ---
+        function sendMessage() {
+            const messageText = userInput.value.trim();
+            if (!messageText || !socket || socket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            const messagePayload = {
+                type: 'user_input', // El tipo que espera tu consumer
+                payload: messageText // El input para reanudar el agente
+            };
+
+            socket.send(JSON.stringify(messagePayload));
+            logToScreen(`[ENVIADO]: ${messageText}`);
+            
+            userInput.value = '';
+            userInput.disabled = true;
+            sendButton.disabled = true;
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // --- FUNCIONES DE UTILIDAD ---
+        function logToScreen(message, isError = false) {
+            const p = document.createElement('p');
+            p.textContent = message;
+            if (isError) {
+                p.style.color = 'red';
+                p.style.fontWeight = 'bold';
+            }
+            logArea.appendChild(p);
+            // Hacer scroll hasta el final
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        function disableChat() {
+            userInput.disabled = true;
+            sendButton.disabled = true;
+        }
+    </script>
+</body>
+</html>

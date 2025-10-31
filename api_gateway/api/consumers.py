@@ -1,74 +1,94 @@
 # api/consumers.py
 import json
-import httpx # Un cliente HTTP moderno y asíncrono. ¡Añádelo a requirements.txt!
+import httpx
 from channels.generic.websocket import AsyncWebsocketConsumer
+from asgiref.sync import sync_to_async
+from django.contrib.auth.models import User
 
-# El nombre del servicio de tu agente en docker-compose
+from .models import Project # Importa tu modelo
+
 AGENT_URL = "http://agent:8000"
 
+# Wrapper para acceder a la BD de forma asíncrona desde el consumer
+@sync_to_async
+def get_project_data(thread_id, user):
+    try:
+        project = Project.objects.get(thread_id=thread_id, user_id=user.id)
+        return {
+            "title": project.title,
+            "description": project.description,
+        }
+    except Project.DoesNotExist:
+        return None
+
 class ChatConsumer(AsyncWebsocketConsumer):
-    # Se llama cuando el frontend intenta conectar
+
     async def connect(self):
-        # Extrae el 'thread_id' de la URL que definimos en routing.py
         self.thread_id = self.scope['url_route']['kwargs']['thread_id']
         self.room_group_name = f'chat_{self.thread_id}'
+        self.user = self.scope["user"] # Obtenido del AuthMiddlewareStack
 
-        # Une este WebSocket a un "grupo" específico.
-        # Esto nos permitirá enviar mensajes a este cliente desde cualquier parte de Django.
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
+        # --- Verificación de Seguridad ---
+        project_data = await get_project_data(self.thread_id, self.user)
+        if not project_data:
+            # Si el proyecto no existe o no pertenece al usuario, rechaza la conexión
+            await self.close()
+            return
 
-        # Acepta la conexión
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        print(f"WebSocket conectado para el hilo: {self.thread_id}")
 
-    # Se llama cuando la conexión se cierra
-    async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
-        print(f"WebSocket desconectado para el hilo: {self.thread_id}")
+        # --- Iniciar la ejecución del agente al conectar ---
+        await self.start_agent_run(project_data)
 
-    # Se llama cuando Django recibe un mensaje desde el frontend (Angular)
-    async def receive(self, text_data):
-        data = json.loads(text_data)
-        message_type = data.get('type') # ej: 'user_input', 'user_selection'
-        payload = data.get('payload')   # ej: el texto del chat, la lista de índices [0, 1]
-
-        print(f"Recibido desde el cliente ({self.thread_id}): {data}")
-
-        # Aquí es donde orquestas la llamada al agente LangGraph.
-        # Por ahora, es una lógica simple. Esto se volverá más complejo
-        # para manejar los 'interrupts' y el streaming de eventos.
+    async def start_agent_run(self, project_data):
+        # Endpoint para iniciar un stream en un hilo existente
+        stream_url = f"{AGENT_URL}/threads/{self.thread_id}/runs/stream"
         
-        # Ejemplo: reanudar una ejecución con el input del usuario
-        # LangServe expone endpoints para actualizar un estado existente
-        update_url = f"{AGENT_URL}/threads/{self.thread_id}/update"
+        # El 'input' que espera tu primer nodo del grafo
+        agent_input = {
+            "project_title": project_data["title"],
+            "project_description": project_data["description"],
+            "document_paths": project_data.get("documents", [])
+        }
 
         async with httpx.AsyncClient(timeout=None) as client:
             try:
-                # El 'input' aquí es lo que el grafo espera para continuar
-                # desde una interrupción.
-                response = await client.post(update_url, json={"input": payload})
-                response.raise_for_status()
-                
-                # La respuesta del agente puede ser un flujo de eventos.
-                # Por simplicidad, aquí solo enviamos el resultado final.
-                # En la versión final, procesarías el stream.
-                agent_response = response.json()
-
-                # Enviar la respuesta del agente de vuelta al frontend
-                await self.send(text_data=json.dumps({
-                    'type': 'agent_response',
-                    'payload': agent_response
-                }))
+                # Usamos un stream para recibir eventos en tiempo real
+                async with client.stream("POST", stream_url, json={
+                    "input": agent_input,
+                    "assistant_id": "agent" # El ID de tu grafo/asistente
+                }, headers={"Accept": "text/event-stream"}) as response:
+                    
+                    async for line in response.aiter_lines():
+                        if line.startswith("data:"):
+                            # Procesa el evento SSE (Server-Sent Event)
+                            event_data = json.loads(line[len("data:"):].strip())
+                            # Retransmite el evento al frontend
+                            await self.send(text_data=json.dumps(event_data))
 
             except httpx.RequestError as e:
-                # Manejar errores de conexión con el agente
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': f"Error comunicándose con el agente: {e}"
-                }))
+                await self.send(text_data=json.dumps({'type': 'error', 'message': str(e)}))
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+
+    async def receive(self, text_data):
+        # Cuando el agente se interrumpe y el usuario responde
+        data = json.loads(text_data)
+        user_input = data.get('payload')
+
+        # Reanudamos el stream pasándole el nuevo input
+        stream_url = f"{AGENT_URL}/threads/{self.thread_id}/runs/stream"
+        async with httpx.AsyncClient(timeout=None) as client:
+            try:
+                async with client.stream("POST", stream_url, json={
+                    "input": user_input, # El input del usuario para continuar
+                    "assistant_id": "agent"
+                }, headers={"Accept": "text/event-stream"}) as response:
+                    async for line in response.aiter_lines():
+                        if line.startswith("data:"):
+                            event_data = json.loads(line[len("data:"):].strip())
+                            await self.send(text_data=json.dumps(event_data))
+            except httpx.RequestError as e:
+                await self.send(text_data=json.dumps({'type': 'error', 'message': str(e)}))

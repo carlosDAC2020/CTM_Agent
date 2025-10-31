@@ -1,9 +1,10 @@
-# api_gateway/requirements.txt
 django
 djangorestframework
+djangorestframework-simplejwt
 psycopg2-binary
 django-cors-headers
 channels
 channels-redis
 daphne
 httpx 
+boto3

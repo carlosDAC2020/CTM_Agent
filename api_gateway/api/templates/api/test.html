@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Agente CTM</title>
+    <style>
+        :root {
+            --primary-color: #003366; --secondary-color: #0066CC; --background-color: #f4f7f9;
+            --text-color: #333; --border-color: #ccc; --error-color: #d32f2f;
+            --success-color: #388e3c; --log-bg-color: #2b2b2b; --log-text-color: #f1f1f1;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--background-color); color: var(--text-color); margin: 0;
+            padding: 20px; display: flex; justify-content: center;
+        }
+        .container {
+            width: 100%; max-width: 800px; background-color: white; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 30px;
+        }
+        h1, h2 { color: var(--primary-color); }
+        .view { display: none; }
+        .view.active { display: block; }
+        .form-group { display: flex; flex-direction: column; margin-bottom: 15px; }
+        label { margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="password"], input[type="email"], textarea {
+            padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 1rem;
+        }
+        button {
+            padding: 12px 20px; background-color: var(--secondary-color); color: white;
+            border: none; border-radius: 4px; font-size: 1.1rem; cursor: pointer; transition: background-color 0.3s;
+        }
+        button:hover { background-color: var(--primary-color); }
+        button:disabled { background-color: #aaa; cursor: not-allowed; }
+        .link-button {
+            background: none; border: none; color: var(--secondary-color); text-decoration: underline;
+            cursor: pointer; padding: 5px; font-size: 0.9rem;
+        }
+        .error-message { color: var(--error-color); font-weight: bold; margin-top: 10px; }
+        #log-area {
+            background-color: var(--log-bg-color); color: var(--log-text-color); font-family: monospace;
+            padding: 15px; border-radius: 4px; height: 300px; overflow-y: auto; margin: 20px 0;
+        }
+        #logout-button { background-color: var(--error-color); width: auto; float: right; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard del Agente CTM</h1>
+
+        <!-- VISTA DE LOGIN -->
+        <div id="login-view" class="view active">
+            <h2>Iniciar Sesión</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-username">Usuario</label>
+                    <input type="text" id="login-username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Contraseña</label>
+                    <input type="password" id="login-password" required>
+                </div>
+                <button type="submit">Entrar</button>
+                <p id="login-error" class="error-message" style="display:none;"></p>
+            </form>
+            <p>¿No tienes cuenta? <button class="link-button" onclick="switchView('register-view')">Regístrate aquí</button></p>
+        </div>
+
+        <!-- VISTA DE REGISTRO -->
+        <div id="register-view" class="view">
+            <h2>Crear Nueva Cuenta</h2>
+            <form id="register-form">
+                <div class="form-group"><label for="reg-username">Usuario</label><input type="text" id="reg-username" required></div>
+                <div class="form-group"><label for="reg-password">Contraseña</label><input type="password" id="reg-password" required></div>
+                <div class="form-group"><label for="reg-email">Email</label><input type="email" id="reg-email"></div>
+                <button type="submit">Registrar</button>
+                <p id="register-error" class="error-message" style="display:none;"></p>
+            </form>
+            <p>¿Ya tienes cuenta? <button class="link-button" onclick="switchView('login-view')">Inicia sesión</button></p>
+        </div>
+
+        <!-- VISTA DEL PANEL PRINCIPAL (DASHBOARD) -->
+        <div id="dashboard-view" class="view">
+            <button id="logout-button">Cerrar Sesión</button>
+            <h2>Bienvenido, <span id="welcome-user"></span>!</h2>
+            
+            <div id="project-creator">
+                <h3>Crear Nuevo Proyecto</h3>
+                <form id="project-form">
+                    <div class="form-group"><label for="title">Título</label><input type="text" id="title" required></div>
+                    <div class="form-group"><label for="description">Descripción</label><textarea id="description" required></textarea></div>
+                    <div class="form-group"><label for="documents">Documentos (Opcional)</label><input type="file" id="documents" multiple></div>
+                    <button type="submit" id="submit-project-button">Crear y Arrancar Agente</button>
+                </form>
+            </div>
+
+            <div id="agent-interaction" style="display:none;">
+                <h3>Interacción con Agente para el proyecto '<span id="current-project-title"></span>'</h3>
+                <div id="log-area"><p>Esperando conexión...</p></div>
+                <div id="interaction-area" style="display:none;">
+                    <input type="text" id="user-input" placeholder="Escribe tu respuesta aquí...">
+                    <button id="send-button">Enviar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- CONFIGURACIÓN CORREGIDA ---
+    // Se eliminó API_BASE_URL. Ahora usamos rutas relativas (ej: /api/token/)
+    // La URL del WebSocket se construye dinámicamente.
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const WS_BASE_URL = `${wsProtocol}//${window.location.host}`;
+
+    // --- MANEJO DE VISTAS ---
+    function switchView(viewId) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+    }
+
+    // --- MANEJO DE AUTENTICACIÓN ---
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const logoutButton = document.getElementById('logout-button');
+
+    window.addEventListener('load', () => {
+        const token = localStorage.getItem('accessToken');
+        if (token) {
+            document.getElementById('welcome-user').textContent = localStorage.getItem('username');
+            switchView('dashboard-view');
+        } else {
+            switchView('login-view');
+        }
+    });
+
+    loginForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+        const errorP = document.getElementById('login-error');
+        
+        try {
+            const response = await fetch(`/api/token/`, { // <-- CORREGIDO
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Error de autenticación');
+
+            localStorage.setItem('accessToken', data.access);
+            localStorage.setItem('refreshToken', data.refresh);
+            localStorage.setItem('username', username);
+            
+            document.getElementById('welcome-user').textContent = username;
+            switchView('dashboard-view');
+            errorP.style.display = 'none';
+        } catch (error) {
+            errorP.textContent = `Failed to fetch: ${error.message}`;
+            errorP.style.display = 'block';
+        }
+    });
+
+    registerForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const username = document.getElementById('reg-username').value;
+        const password = document.getElementById('reg-password').value;
+        const email = document.getElementById('reg-email').value;
+        const errorP = document.getElementById('register-error');
+
+        try {
+            const response = await fetch(`/api/register/`, { // <-- CORREGIDO
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, email })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(JSON.stringify(data));
+            
+            alert('¡Usuario registrado con éxito! Por favor, inicia sesión.');
+            switchView('login-view');
+            errorP.style.display = 'none';
+        } catch(error) {
+            errorP.textContent = `Failed to fetch: ${error.message}`;
+            errorP.style.display = 'block';
+        }
+    });
+    
+    logoutButton.addEventListener('click', () => {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('username');
+        switchView('login-view');
+    });
+
+    // --- MANEJO DE PROYECTOS Y WEBSOCKET ---
+    const projectForm = document.getElementById('project-form');
+    const logArea = document.getElementById('log-area');
+    const agentInteractionDiv = document.getElementById('agent-interaction');
+    
+    let socket = null;
+
+    projectForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const submitBtn = document.getElementById('submit-project-button');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Procesando...';
+
+        const title = document.getElementById('title').value;
+        document.getElementById('current-project-title').textContent = title;
+        agentInteractionDiv.style.display = 'block';
+        logArea.innerHTML = '<p>Creando proyecto y subiendo archivos...</p>';
+
+        const formData = new FormData();
+        formData.append('title', title);
+        formData.append('description', document.getElementById('description').value);
+        const files = document.getElementById('documents').files;
+        for (let i = 0; i < files.length; i++) {
+            formData.append('documents', files[i]);
+        }
+
+        try {
+            const token = localStorage.getItem('accessToken');
+            const response = await fetch(`/api/projects/`, { // <-- CORREGIDO
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(JSON.stringify(data));
+
+            logToScreen(`Proyecto creado. Thread ID: ${data.thread_id}`);
+            connectWebSocket(data.thread_id);
+
+        } catch (error) {
+            logToScreen(`ERROR: ${error.message}`, true);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Crear y Arrancar Agente';
+        }
+    });
+
+    function connectWebSocket(threadId) {
+        logToScreen(`Conectando al WebSocket...`);
+        if(socket) socket.close();
+        
+        const wsUrl = `${WS_BASE_URL}/api/ws/proyect/${threadId}/`; // <-- CORREGIDO (usa la constante dinámica)
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => logToScreen('✅ Conexión WebSocket establecida. Agente iniciado.');
+        socket.onmessage = event => {
+            const message = JSON.parse(event.data);
+            logToScreen(`[EVENTO]: ${JSON.stringify(message, null, 2)}`);
+        };
+        socket.onerror = error => logToScreen('❌ Error de WebSocket.', true);
+        socket.onclose = () => logToScreen('🔌 Conexión WebSocket cerrada.');
+    }
+
+    function logToScreen(message, isError = false) {
+        const p = document.createElement('p');
+        p.textContent = message;
+        if (isError) p.style.color = 'var(--error-color)';
+        logArea.appendChild(p);
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+</script>
+</body>
+</html>

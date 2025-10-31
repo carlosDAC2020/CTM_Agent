@@ -40,6 +40,7 @@ INSTALLED_APPS = [
 
     # my apps
     'rest_framework',
+    "rest_framework_simplejwt.token_blacklist",
     'corsheaders',
     'channels',
     'api',
@@ -154,4 +155,26 @@ CHANNEL_LAYERS = {
 # --- Configuración CORS ---
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200", # El puerto por defecto de Angular
+    "http://localhost:5500",      # Para Live Server de VS Code (localhost)
+    "http://127.0.0.1:5500", 
 ]
+
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+}
+
+
+from datetime import timedelta
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    
+}
